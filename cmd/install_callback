@@ -8,7 +8,7 @@ log_msg() {
 
 log_msg "[INFO] 开始安装..."
 sudo apt install /var/apps/kasm-lxqt/target/server/kasmvncserver_bookworm_*.deb -y
-
+log_msg "[INFO] KasmVNC Server 版本: $(dpkg-query -W -f='${Version}' kasmvncserver 2>/dev/null)"
 
 
 exit 0
