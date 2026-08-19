@@ -10,6 +10,9 @@ sudo mkdir "${HOME_DIR}"
 sudo chown -R 1000:1001 "${HOME_DIR}"
 sudo chmod 700 "${HOME_DIR}"
 
+# 当前用户到ssl-cert组
+sudo adduser ${CURRENT_USER} ssl-cert
+
 # 安装 LXQt 桌面管理器
 sudo apt update
 sudo apt install lxqt-core lxqt-qtplugin lxqt-powermanagement -y
