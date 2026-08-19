@@ -6,7 +6,8 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
 }
 
-log_msg "[INFO] 安装..."
+log_msg "[INFO] 开始安装..."
+sudo apt install /var/apps/kasm-lxqt/target/server/kasmvncserver_bookworm_*.deb -y
 
 
 
