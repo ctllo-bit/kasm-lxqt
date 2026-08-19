@@ -1,0 +1,13 @@
+{
+    ".url": {
+        "kasm-lxqt.Application": {
+            "title": "LXQT",
+            "icon": "images/icon_{0}.png",
+            "type": "url",
+            "protocol": "",
+            "port": "8080",
+            "url": "/",
+            "allUsers": false
+        }
+    }
+}

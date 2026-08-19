@@ -1,0 +1,28 @@
+{
+    "data-share":
+    {
+        "shares":
+        [
+            {
+                "name": "kasm-lxqt",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "kasm-lxqt"
+                    ]
+                }
+            },
+            {
+                "name": "kasm-lxqt/data",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "kasm-lxqt"
+                    ]
+                }
+            }
+        ]
+    }
+}
