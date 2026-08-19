@@ -10,11 +10,4 @@ log_msg "[INFO] 安装..."
 
 
 
-sudo apt install -y dbus-x11
-
-
-
-
-
-
 exit 0
