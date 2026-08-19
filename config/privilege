@@ -1,6 +1,8 @@
 {
-    "defaults":
-    {
-        "run-as": "package"
-    }
+  "defaults":
+  {
+    "run-as": "root"
+  },
+  "username": "kasm-lxqt",
+  "groupname": "kasm-lxqt"
 }

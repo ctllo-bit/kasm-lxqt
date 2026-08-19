@@ -1,5 +1,13 @@
 #!/bin/bash
+CURRENT_USER=$(getent passwd 1000 | cut -d: -f1)
+if [ -z "${CURRENT_USER}" ]; then
+    exit 1
+fi
 
-### This script is called before the user installs the application.
+HOME_DIR="/home/${CURRENT_USER}"
+sudo mkdir "${HOME_DIR}"
+sudo chown -R 1000:1001 "${HOME_DIR}"
+sudo chmod 700 "${HOME_DIR}"
+sudo apt update
 
 exit 0
