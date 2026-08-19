@@ -12,9 +12,6 @@ sudo chmod 700 "${HOME_DIR}"
 
 # 安装 LXQt 桌面管理器
 sudo apt update
-sudo apt install lxqt sddm -y
-
-sudo systemctl enable sddm
-sudo systemctl start sddm
+sudo apt install lxqt-core lxqt-qtplugin lxqt-powermanagement -y
 
 exit 0
