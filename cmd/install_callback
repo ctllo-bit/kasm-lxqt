@@ -13,5 +13,28 @@ log_msg "[INFO] KasmVNC Server 版本: $(dpkg-query -W -f='${Version}' kasmvncse
 log_msg "[INFO] 添加当前用户到ssl-cert组..."
 sudo adduser $USER ssl-cert
 
+log_msg "[INFO] 配置KasmVNC的Systemd服务..."
+sudo tee "/etc/systemd/system/kasmvnc.service" > /dev/null <<EOF
+[Unit]
+Description=KasmVNC Server
+After=network.target
+
+[Service]
+Type=forking
+User=1000
+Group=1001
+Restart=always
+RestartSec=3
+
+ExecStart=/usr/bin/kasmvncserver -publicIP $(hostname -I | awk '{print $1}')
+ExecStop=/usr/bin/kasmvncserver -kill :1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+
+
+
 
 exit 0
