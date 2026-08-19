@@ -6,10 +6,12 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
 }
 
-log_msg "[INFO] 安装 LXQt + XRDP..."
-sudo apt install -y dbus-x11 lxqt
-sudo systemctl enable sddm
-sudo systemctl start sddm
+log_msg "[INFO] 安装..."
+
+
+
+sudo apt install -y dbus-x11
+
 
 
 

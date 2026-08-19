@@ -5,9 +5,13 @@ if [ -z "${CURRENT_USER}" ]; then
 fi
 
 HOME_DIR="/home/${CURRENT_USER}"
+# 新建家目录
 sudo mkdir "${HOME_DIR}"
 sudo chown -R 1000:1001 "${HOME_DIR}"
 sudo chmod 700 "${HOME_DIR}"
+
+# 安装 LXQt 桌面管理器
 sudo apt update
+sudo apt install sddm lxqt lxqt-core lxqt-qtplugin lxqt-powermanagement -y
 
 exit 0
