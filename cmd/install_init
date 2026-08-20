@@ -10,7 +10,7 @@ sudo mkdir "${HOME_DIR}"
 sudo chown -R 1000:1001 "${HOME_DIR}"
 sudo chmod 700 "${HOME_DIR}"
 
-# 当前用户到ssl-cert组
+# 将当前用户加入 ssl-cert 组以管理证书
 sudo adduser ${CURRENT_USER} ssl-cert
 
 # 安装 LXQt 桌面管理器
