@@ -1,62 +1,25 @@
 #!/bin/bash
-
-CURRENT_USER=$(getent passwd 1000 | cut -d: -f1)
-
-# 安装KasmVNC
-sudo apt install /var/apps/kasm-lxqt/target/server/kasmvncserver_bookworm_*.deb -y
-
-if [ "$EUID" -eq 0 ]; then
-    exec runuser -u "${CURRENT_USER}" -- "$0" "$@"
-fi
-
-
 LOG_FILE="${TRIM_DATA_SHARE_PATHS%%:*}/info.log"
+CURRENT_USER=$(getent passwd 1000 | cut -d: -f1)
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
 }
 
-log_msg "现在用户: $(whoami)" 
+# 安装KasmVNC
+sudo apt install /var/apps/kasm-lxqt/target/server/kasmvncserver_bookworm_*.deb -y
 log_msg "[INFO] KasmVNC Server 版本: $(dpkg-query -W -f='${Version}' kasmvncserver 2>/dev/null)"
 
+if [ "$EUID" -eq 0 ]; then
+    exec runuser -u "${CURRENT_USER}" -- "$0" "$@"
+fi
+
+log_msg "现在用户: $(whoami)" 
 mkdir -p ~/.vnc
 
 # 创建Kasm用户
 KASM_PASS="123456"
 echo -e "${KASM_PASS}\n${KASM_PASS}\n" | kasmvncpasswd -u $USER -ow
 
-
-# 创建 kasmvnc.yaml配置
-INTERNAL_IP=$(hostname -I | awk '{print $1}')
-
-cat > "$HOME/.vnc/kasmvnc.yaml" <<EOF
-desktop:
-  resolution:
-    width: 1920
-    height: 1080
-  allow_resize: true
-  pixel_depth: 24
-
-network:
-  protocol: http
-  interface: ${INTERNAL_IP}
-  websocket_port: 8122
-  use_ipv4: true
-  use_ipv6: false
-
-encoding:
-  max_frame_rate: 60
-
-server:
-  advanced:
-    kasm_password_file: ${HOME}/.kasmpasswd
-
-logging:
-  log_writer_name: all
-  log_dest: logfile
-  level: 30
-EOF
-# 启动桌面
-kasmvncserver -select-de lxqt
 
 exit 0
