@@ -21,9 +21,9 @@ Type=forking
 User=1000
 Group=1001
 
-ExecStartPre=-/usr/bin/kasmvncserver -kill :1
-ExecStart=/usr/bin/kasmvncserver :1
-ExecStop=/usr/bin/kasmvncserver -kill :1
+Environment=DISPLAY=:1
+ExecStart=/usr/bin/kasmvncserver
+ExecStop=/usr/bin/kasmvncserver -kill
 
 Restart=always
 RestartSec=3
