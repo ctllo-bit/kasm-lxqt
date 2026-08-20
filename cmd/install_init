@@ -16,12 +16,14 @@ sudo adduser ${CURRENT_USER} ssl-cert
 sudo apt update
 # 安装 LXQt 桌面
 sudo apt install -y dbus-x11 lxqt-core lightdm lightdm-gtk-greeter
+# 使用 debconf 静默配置 lightdm
+echo "lightdm shared/default-x-display-manager select lightdm" | sudo debconf-set-selections
+sudo DEBIAN_FRONTEND=noninteractive dpkg-reconfigure lightdm
 
 # 配置中文环境
 sudo apt install -y locales fonts-noto-cjk fonts-wqy-zenhei
 sudo sed -i '/^# zh_CN.UTF-8 UTF-8/s/^# //' /etc/locale.gen
 sudo locale-gen
 sudo update-locale LANG=zh_CN.UTF-8
-sudo dpkg-reconfigure lightdm
 
 exit 0
