@@ -21,21 +21,6 @@ mkdir -p ~/.vnc
 KASM_PASS="123456"
 echo -e "${KASM_PASS}\n${KASM_PASS}\n" | kasmvncpasswd -u $USER -ow
 
-# 生成LXQt配置
-cat > ~/.vnc/xstartup <<'EOF'
-#!/bin/sh
-
-unset SESSION_MANAGER
-unset DBUS_SESSION_BUS_ADDRESS
-
-export XDG_SESSION_TYPE=x11
-export XDG_CURRENT_DESKTOP=LXQt
-export XDG_CONFIG_DIRS=/etc/xdg/xdg-LXQt:/etc/xdg
-
-exec startlxqt
-EOF
-chmod +x ~/.vnc/xstartup
-
 # 创建kasm配置文件
 cat > "$HOME/.vnc/kasmvnc.yaml" <<EOF
 desktop:
@@ -56,6 +41,24 @@ logging:
   log_dest: logfile
   level: 100
 EOF
+
+# 启动桌面
+kasmvncserver -select-de lxqt
+kasmvncserver -kill :1
+
+# 生成LXQt配置
+cat > ~/.vnc/xstartup <<'EOF'
+#!/bin/sh
+
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+
+export XDG_SESSION_TYPE=x11
+export XDG_CURRENT_DESKTOP=LXQt
+
+exec startlxqt
+EOF
+chmod +x ~/.vnc/xstartup
 
 
 exit 0
