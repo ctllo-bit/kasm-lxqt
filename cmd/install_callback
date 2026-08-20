@@ -10,6 +10,38 @@ log_msg() {
 sudo apt install /var/apps/kasm-lxqt/target/server/kasmvncserver_bookworm_*.deb -y
 log_msg "[INFO] KasmVNC Server 版本: $(dpkg-query -W -f='${Version}' kasmvncserver 2>/dev/null)"
 
+log_msg "[INFO] 配置KasmVNC的Systemd服务..."
+sudo tee "/etc/systemd/system/kasmvnc.service" > /dev/null <<EOF
+[Unit]
+Description=KasmVNC Server
+After=network.target
+
+[Service]
+Type=forking
+User=1000
+Group=1001
+
+Environment=DISPLAY=:1
+Environment=HOME=/home/${CURRENT_USER}
+Environment=USER=${CURRENT_USER}
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=XDG_SESSION_TYPE=x11
+
+ExecStartPre=-/usr/bin/kasmvncserver -kill :1
+ExecStart=/usr/bin/kasmvncserver :1
+ExecStop=/usr/bin/kasmvncserver -kill :1
+
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 启动服务
+sudo systemctl daemon-reload
+sudo systemctl enable kasmvnc.service
+
 if [ "$EUID" -eq 0 ]; then
     exec runuser -u "${CURRENT_USER}" -- "$0" "$@"
 fi
@@ -58,7 +90,6 @@ export XDG_CURRENT_DESKTOP=LXQt
 
 exec startlxqt
 EOF
-chmod +x ~/.vnc/xstartup
-
+chmod +x ~/.vnc/xstartup             
 
 exit 0

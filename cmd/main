@@ -1,115 +1,23 @@
 #!/bin/bash
 
-LOG_FILE="${TRIM_PKGVAR}/info.log"
-
-log_msg() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
-}
-
-DISPLAY_NUM=":1"
-# 根据 UID 获取用户
-USER=$(getent passwd 1000 | cut -d: -f1)
-CMD="kasmvncserver ${DISPLAY_NUM}"
-
-get_vnc_pid() {
-    su - "${USER}" -c "kasmvncserver -list" 2>/dev/null \
-    | awk "/^[[:space:]]*${DISPLAY_NUM}[[:space:]]/ {print \$2}"
-}
-
-status() {
-    local pid
-    pid=$(get_vnc_pid)
-
-    if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
-        echo "KasmVNC running: ${DISPLAY_NUM} pid=${pid}"
-        return 0
-    fi
-    return 1
-}
-
-start_process() {
-    if status; then
-        log_msg "KasmVNC already running"
-        return 0
-    fi
-
-    log_msg "Starting KasmVNC ${DISPLAY_NUM}"
-
-    su - "${USER}" -c "${CMD}" \
-        >> "${LOG_FILE}" 2>&1
-
-
-    # 等待服务生成
-    local count=0
-    while [ ${count} -lt 10 ]; do
-        sleep 1
-        if status; then
-            log_msg "KasmVNC started"
-            return 0
-        fi
-        count=$((count+1))
-    done
-
-    log_msg "KasmVNC start failed"
-    return 1
-}
-
-
-
-
-stop_process() {
-    if ! status; then
-        log_msg "KasmVNC not running"
-        return 0
-    fi
-
-    log_msg "Stopping KasmVNC ${DISPLAY_NUM}"
-
-    su - "${USER}" -c \
-        "kasmvncserver -kill ${DISPLAY_NUM}" \
-        >> "${LOG_FILE}" 2>&1
-
-
-
-    local count=0
-    while status && [ ${count} -lt 10 ]; do
-        sleep 1
-        count=$((count+1))
-        log_msg "waiting stop ${count}/10"
-    done
-
-
-
-    if status; then
-        log_msg "KasmVNC stop failed"
-        return 1
-    fi
-
-    log_msg "KasmVNC stopped"
-    return 0
-}
-
-
 case "$1" in
-  start)
-    start_process
-    exit $?
+start)
+    systemctl start kasmvnc.service
+    exit 0
+    ;;
+stop)
+    systemctl stop kasmvnc.service
+    exit 0
     ;;
 
-  stop)
-    stop_process
-    exit $?
-    ;;
-
-  status)
-    if status; then
+status)
+    if systemctl is-active --quiet kasmvnc.service; then
         exit 0
     else
         exit 3
     fi
     ;;
-
-  *)
+*)
     exit 1
     ;;
 esac

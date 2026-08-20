@@ -15,6 +15,6 @@ sudo adduser ${CURRENT_USER} ssl-cert
 
 # 安装 LXQt 桌面管理器
 sudo apt update
-sudo apt install lxqt-core lxqt-qtplugin lxqt-powermanagement -y
+sudo apt install lxqt-core -y
 
 exit 0
