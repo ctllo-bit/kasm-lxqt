@@ -17,7 +17,4 @@ sudo adduser ${CURRENT_USER} ssl-cert
 sudo apt update
 sudo apt install lxqt-core lxqt-qtplugin lxqt-powermanagement -y
 
-# 安装KasmVNC
-sudo apt install /var/apps/kasm-lxqt/target/server/kasmvncserver_bookworm_*.deb -y
-
 exit 0

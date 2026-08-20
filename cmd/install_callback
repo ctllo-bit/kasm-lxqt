@@ -1,6 +1,10 @@
 #!/bin/bash
 
 CURRENT_USER=$(getent passwd 1000 | cut -d: -f1)
+
+# 安装KasmVNC
+sudo apt install /var/apps/kasm-lxqt/target/server/kasmvncserver_bookworm_*.deb -y
+
 if [ "$EUID" -eq 0 ]; then
     exec runuser -u "${CURRENT_USER}" -- "$0" "$@"
 fi
