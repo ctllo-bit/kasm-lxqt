@@ -21,18 +21,26 @@ mkdir -p ~/.vnc
 KASM_PASS="123456"
 echo -e "${KASM_PASS}\n${KASM_PASS}\n" | kasmvncpasswd -u $USER -ow
 
-cat > ~/.vnc/xstartup <<'EOF'
-#!/bin/sh
+# 创建kasm配置文件
+cat > "$HOME/.vnc/kasmvnc.yaml" <<EOF
+desktop:
+  resolution:
+    width: 1920
+    height: 1080
+  allow_resize: true
 
-unset SESSION_MANAGER
-unset DBUS_SESSION_BUS_ADDRESS
+network:
+  protocol: http
+  interface: 0.0.0.0
+  websocket_port: 8088
+  use_ipv4: true
+  use_ipv6: false
 
-export XDG_SESSION_TYPE=x11
-export XDG_CURRENT_DESKTOP=LXQt
-
-exec startlxqt
+logging:
+  log_writer_name: all
+  log_dest: logfile
+  level: 100
 EOF
-chmod +x ~/.vnc/xstartup
 
 
 exit 0
