@@ -15,7 +15,7 @@ sudo adduser ${CURRENT_USER} ssl-cert
 
 # 安装 LXQt 桌面管理器
 sudo apt update
-sudo apt install -y lxqt-core 
+sudo apt install -y dbus-x11 lxqt-core
 
 # 配置中文环境
 sudo apt install -y locales fonts-noto-cjk fonts-wqy-zenhei

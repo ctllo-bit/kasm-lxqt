@@ -21,12 +21,6 @@ Type=forking
 User=1000
 Group=1001
 
-Environment=DISPLAY=:1
-Environment=HOME=/home/${CURRENT_USER}
-Environment=USER=${CURRENT_USER}
-Environment=XDG_RUNTIME_DIR=/run/user/1000
-Environment=XDG_SESSION_TYPE=x11
-
 ExecStartPre=-/usr/bin/kasmvncserver -kill :1
 ExecStart=/usr/bin/kasmvncserver :1
 ExecStop=/usr/bin/kasmvncserver -kill :1
@@ -85,11 +79,7 @@ cat > ~/.vnc/xstartup <<'EOF'
 unset SESSION_MANAGER
 unset DBUS_SESSION_BUS_ADDRESS
 
-export XDG_SESSION_TYPE=x11
-export XDG_CURRENT_DESKTOP=LXQt
-
 exec startlxqt
 EOF
-chmod +x ~/.vnc/xstartup             
-
+chmod +x ~/.vnc/xstartup      
 exit 0
