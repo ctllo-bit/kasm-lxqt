@@ -44,6 +44,12 @@ if [ "$EUID" -eq 0 ]; then
 fi
 
 log_msg "现在用户: $(whoami)" 
+
+log_msg "${wizard_port}"
+log_msg "${wizard_username}"
+log_msg "${wizard_password}"
+
+
 mkdir -p ~/.vnc
 
 # 创建Kasm用户
