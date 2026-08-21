@@ -44,17 +44,10 @@ if [ "$EUID" -eq 0 ]; then
 fi
 
 log_msg "现在用户: $(whoami)" 
-
-log_msg "${wizard_port}"
-log_msg "${wizard_username}"
-log_msg "${wizard_password}"
-
-
 mkdir -p ~/.vnc
 
 # 创建Kasm用户
-KASM_PASS="123456"
-echo -e "${KASM_PASS}\n${KASM_PASS}\n" | kasmvncpasswd -u $USER -ow
+echo -e "${wizard_password}\n${wizard_password}\n" | kasmvncpasswd -u "${wizard_username}" -ow
 
 # 创建kasm配置文件
 cat > "$HOME/.vnc/kasmvnc.yaml" <<EOF
@@ -67,7 +60,7 @@ desktop:
 network:
   protocol: http
   interface: 0.0.0.0
-  websocket_port: 8088
+  websocket_port: ${wizard_port}
   use_ipv4: true
   use_ipv6: false
 
