@@ -43,10 +43,11 @@ if [ "$EUID" -eq 0 ]; then
     exec runuser -u "${CURRENT_USER}" -- "$0" "$@"
 fi
 
-log_msg "现在用户: $(whoami)" 
+log_msg "当前执行脚本的用户: $(whoami)" 
 mkdir -p ~/.vnc
 
 # 创建Kasm用户
+rm -f ~/.kasmpasswd
 echo -e "${wizard_password}\n${wizard_password}\n" | kasmvncpasswd -u "${wizard_username}" -ow
 
 # 创建kasm配置文件
