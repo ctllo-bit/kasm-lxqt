@@ -1,1 +1,3 @@
 app/server/kasmvncserver_bookworm_*.deb
+app/kclient/node_modules
+app/kclient/package-lock.json
