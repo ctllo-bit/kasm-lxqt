@@ -16,23 +16,10 @@ sudo adduser ${CURRENT_USER} ssl-cert
 sudo apt update
 # 安装 LXQt 桌面
 sudo apt install -y dbus-x11 lxqt-core lightdm lightdm-gtk-greeter
-# 使用 debconf 静默配置 lightdm
-echo "lightdm shared/default-x-display-manager select lightdm" | sudo debconf-set-selections
-sudo DEBIAN_FRONTEND=noninteractive dpkg-reconfigure lightdm
 
-# 配置中文环境
-sudo apt install -y locales fonts-noto-cjk fonts-wqy-zenhei
-sudo sed -i '/^# zh_CN.UTF-8 UTF-8/s/^# //' /etc/locale.gen
-sudo locale-gen
-sudo update-locale LANG=zh_CN.UTF-8
+# PulseAudio
+sudo -u ${CURRENT_USER} XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart pulseaudio
 
-# 配置 PulseAudio
-sudo cat > "/etc/pulse/default.pa.d/kasm.pa" <<'EOF'
-load-module module-null-sink sink_name=kasm_sink sink_properties=device.description=KasmAudio
-load-module module-remap-source source_name=virtmic master=kasm_sink.monitor
 
-set-default-sink kasm_sink
-set-default-source virtmic
-EOF
 
 exit 0
