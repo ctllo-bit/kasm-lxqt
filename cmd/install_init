@@ -17,7 +17,16 @@ sudo apt update
 # 安装 LXQt 桌面
 sudo apt install -y dbus-x11 lxqt-core lightdm lightdm-gtk-greeter
 
-# PulseAudio
+# 配置 PulseAudio
+sudo cat > "/etc/pulse/default.pa.d/kasm.pa" <<'EOF'
+load-module module-null-sink sink_name=kasm_sink sink_properties=device.description=KasmAudio
+load-module module-remap-source source_name=virtmic master=kasm_sink.monitor
+
+set-default-sink kasm_sink
+set-default-source virtmic
+EOF
+
+# 启用 PulseAudio
 sudo -u ${CURRENT_USER} XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart pulseaudio
 
 
