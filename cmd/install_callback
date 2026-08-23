@@ -33,10 +33,9 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-# 启用 Kasm 
+# 开机自启 Kasm 
 sudo systemctl enable kasmvnc.service
 # 启用 LightDM
-sudo systemctl enable lightdm
 sudo systemctl start lightdm
 
 if [ "$EUID" -eq 0 ]; then

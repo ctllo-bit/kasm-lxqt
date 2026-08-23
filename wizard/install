@@ -30,7 +30,7 @@
                 "type": "text",
                 "field": "wizard_username",
                 "label": "用户名",
-                "initValue": "kasm",
+                "initValue": "abc",
                 "rules": [
                     {
                         "required": true,
@@ -47,6 +47,7 @@
                 "type": "password",
                 "field": "wizard_password",
                 "label": "密码",
+                "initValue": "123456",
                 "rules": [
                     {
                         "required": true,
