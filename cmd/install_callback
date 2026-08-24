@@ -20,6 +20,8 @@ After=network.target
 Type=forking
 User=1000
 Group=1001
+Restart=always
+RestartSec=3
 
 Environment=DISPLAY=:1
 ExecStart=/usr/bin/kasmvncserver
@@ -32,9 +34,31 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
+log_msg "正在创建 proxy 服务..."
+sudo tee "/etc/systemd/system/kasm-client.service" > /dev/null <<EOF
+[Unit]
+Description=kasm-client
+After=kasmvnc.service
+Requires=kasmvnc.service
+
+[Service]
+Type=simple
+User=1000
+Group=1001
+Restart=always
+RestartSec=3
+
+ExecStart=${TRIM_APPDEST}/server/kclient 
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+
 # 开机自启 Kasm 
 sudo systemctl daemon-reload
 sudo systemctl enable kasmvnc.service
+sudo systemctl enable kasm-client.service
 
 if [ "$EUID" -eq 0 ]; then
     exec runuser -u "${CURRENT_USER}" -- "$0" "$@"

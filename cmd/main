@@ -2,10 +2,11 @@
 
 case "$1" in
 start)
-    systemctl start kasmvnc.service
+    systemctl start kasm-client.service
     exit 0
     ;;
 stop)
+    systemctl stop kasm-client.service
     systemctl stop kasmvnc.service
     exit 0
     ;;

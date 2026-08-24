@@ -12,15 +12,15 @@ build:
 
 	@echo "==> golang编译 linux-$(ARCH)..."
 	@cd app/kclient && \
-	$(GO_ENV) go build -o ../server/kasmvnc-client .
+	$(GO_ENV) go build -o ../server/kclient .
 
 	@echo "==> 正在打包 fpk..."
 	@fnpack build
 	@mv kasm-lxqt.fpk Kasmlqxt-$(ARCH).fpk
-	@rm -f app/server/kasmvnc-client
+	@rm -f app/server/kclient
 	@rm -f /vol1/1000/Kasmlqxt-*.fpk
 	@cp Kasmlqxt-$(ARCH).fpk /vol1/1000/
 
 clean:
-	@rm -f app/server/kasmvnc-client
+	@rm -f app/server/kclient
 	@rm -f Kasmlqxt-*.fpk
