@@ -57,7 +57,7 @@ desktop:
 
 network:
   protocol: http
-  interface: 0.0.0.0
+  interface: 127.0.0.1
   websocket_port: ${wizard_port}
   use_ipv4: true
   use_ipv6: false
