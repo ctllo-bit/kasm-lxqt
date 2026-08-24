@@ -1,217 +1,254 @@
-var host = window.location.hostname; 
+var host = window.location.hostname;
 var port = window.location.port;
 var protocol = window.location.protocol;
-var path = window.location.pathname;
-var socket = io(protocol + '//' + host + ':' + port, { path: path + '/socket.io'});
+var basePath = window.location.pathname.replace(/\/files\/?$/, '').replace(/\/+$/, '');
+var wsProtocol = protocol === 'https:' ? 'wss://' : 'ws://';
+var socket = null;
+var connected = false;
+var fmRoot = null;
+var pendingDownload = null;
+var uploadQueue = [];
+var uploading = false;
 
-// Open default folder on connect
-socket.on('connect',function(){
-  $('#filebrowser').empty();
-  $('#filebrowser').append($('<div>').attr('id','loading'));
-  socket.emit('open', '');
-});
+function connect() {
+  socket = new WebSocket(wsProtocol + host + ':' + port + basePath + '/files/ws');
+  socket.binaryType = 'arraybuffer';
+  socket.onopen = function() {
+    connected = true;
+    send({type: 'open'});
+  };
+  socket.onmessage = handleMessage;
+  socket.onclose = function() {
+    connected = false;
+    $('#filebrowser').empty();
+    $('#filebrowser').append($('<div>').text('Connection lost, retrying...'));
+    setTimeout(connect, 3000);
+  };
+}
+
+function send(message) {
+  if (connected) {
+    socket.send(JSON.stringify(message));
+  }
+}
+
+function handleMessage(event) {
+  if (typeof event.data === 'string') {
+    var message = JSON.parse(event.data);
+    if (message.type === 'renderfiles') {
+      renderFiles(message);
+    } else if (message.type === 'download') {
+      pendingDownload = message.name;
+    } else if (message.type === 'upload-ack') {
+      uploading = false;
+      processUploadQueue();
+    } else if (message.type === 'error') {
+      alert(message.message);
+      uploading = false;
+      processUploadQueue();
+    }
+    return;
+  }
+
+  if (pendingDownload) {
+    saveBlob(event.data, pendingDownload);
+    pendingDownload = null;
+  }
+}
+
+connect();
 
 // Get file list
 function getFiles(directory) {
-  directory = directory.replace("//","/");
-  directory = directory.replace("|","'");
-  let directoryClean = directory.replace("'","|");
-  if ((directory !== '/') && (directory.endsWith('/'))) {
-    directory = directory.slice(0, -1);
-  }
-  $('#filebrowser').empty();
-  $('#filebrowser').append($('<div>').attr('id','loading'));
-  socket.emit('getfiles', directory);
+  if (!directory || directory === '/') return;
+  showLoading();
+  send({type: 'getfiles', directory: directory});
 }
 
 // Render file list
-async function renderFiles(data) {
-  let dirs = data[0];
-  let files = data[1];
-  let directory = data[2];
-  let baseName = directory.split('/').slice(-1)[0]; 
-  let parentFolder = directory.replace(baseName,'');
-  let parentLink = $('<td>').addClass('directory').attr('onclick', 'getFiles(\'' + parentFolder + '\');').text('..');
-  let directoryClean = directory.replace("'","|");
-  if (directoryClean == '/') {
-    directoryClean = '';
+function renderFiles(message) {
+  var dirs = message.dirs || [];
+  var files = message.files || [];
+  var directory = message.directory;
+  fmRoot = message.root;
+  var table = $('<table>').addClass('fileTable');
+  var header = $('<tr>');
+  for (var name of ['Name', 'Type', 'Delete (NO WARNING)']) {
+    header.append($('<th>').text(name));
   }
-  let table = $('<table>').addClass('fileTable');
-  let tableHeader = $('<tr>');
-  for await (name of ['Name', 'Type', 'Delete (NO WARNING)']) {
-    tableHeader.append($('<th>').text(name));
+  table.append(header);
+
+  if (directory !== fmRoot) {
+    var parentDirectory = directory.slice(0, directory.lastIndexOf('/')) || '/';
+    var parentRow = $('<tr>');
+    parentRow.append($('<td>').addClass('directory').text('..').on('click', function() {
+      getFiles(parentDirectory);
+    }));
+    parentRow.append($('<td>').text('Parent'));
+    parentRow.append($('<td>'));
+    table.append(parentRow);
   }
-  let parentRow = $('<tr>');
-  for await (item of [parentLink, $('<td>').text('Parent'), $('<td>')]) {
-    parentRow.append(item);
+
+  for (var dir of dirs) {
+    var dirPath = directory + '/' + dir;
+    var dirRow = $('<tr>');
+    dirRow.append($('<td>').addClass('directory').text(dir).on('click', function() {
+      getFiles(dirPath);
+    }));
+    dirRow.append($('<td>').text('Dir'));
+    dirRow.append($('<td>').append($('<button>').addClass('deleteButton').text('Delete').on('click', function() {
+      deleter(dirPath);
+    })));
+    table.append(dirRow);
   }
-  table.append(tableHeader,parentRow);
+
+  for (var file of files) {
+    var filePath = directory + '/' + file;
+    var fileRow = $('<tr>');
+    fileRow.append($('<td>').addClass('file').text(file).on('click', function() {
+      downloadFile(filePath);
+    }));
+    fileRow.append($('<td>').text('File'));
+    fileRow.append($('<td>').append($('<button>').addClass('deleteButton').text('Delete').on('click', function() {
+      deleter(filePath);
+    })));
+    table.append(fileRow);
+  }
+
   $('#filebrowser').empty();
   $('#filebrowser').data('directory', directory);
   $('#filebrowser').append($('<div>').text(directory));
   $('#filebrowser').append(table);
-  if (dirs.length > 0) {
-    for await (let dir of dirs) {
-      let tableRow = $('<tr>');
-      let dirClean = dir.replace("'","|");
-      let link = $('<td>').addClass('directory').attr('onclick', 'getFiles(\'' + directoryClean + '/' + dirClean + '\');').text(dir);
-      let type = $('<td>').text('Dir');
-      let del = $('<td>').append($('<button>').addClass('deleteButton').attr('onclick', 'deleter(\'' + directoryClean + '/' + dirClean + '\');').text('Delete'));
-      for await (item of [link, type, del]) {
-        tableRow.append(item);
-      }
-      table.append(tableRow);
-    }
-  }
-  if (files.length > 0) {
-    for await (let file of files) {
-      let tableRow = $('<tr>');
-      let fileClean = file.replace("'","|");
-      let link = $('<td>').addClass('file').attr('onclick', 'downloadFile(\'' + directoryClean + '/' + fileClean + '\');').text(file);
-      let type = $('<td>').text('File');
-      let del = $('<td>').append($('<button>').addClass('deleteButton').attr('onclick', 'deleter(\'' + directoryClean + '/' + fileClean + '\');').text('Delete'));
-      for await (item of [link, type, del]) {
-        tableRow.append(item);
-      }
-      table.append(tableRow);
-    }
-  }
 }
 
 // Download a file
 function downloadFile(file) {
-  file = file.replace("|","'");
-  socket.emit('downloadfile', file);
+  showLoading();
+  send({type: 'download', file: file});
 }
 
 // Send buffer to download blob
-function sendFile(res) {
-  let data = res[0];
-  let fileName = res[1];
-  let blob = new Blob([data], { type: "application/octetstream" });
-  let url = window.URL || window.webkitURL;
-  link = url.createObjectURL(blob);
-  let a = $("<a />");
+function saveBlob(data, fileName) {
+  var blob = new Blob([data], { type: "application/octet-stream" });
+  var url = window.URL || window.webkitURL;
+  var link = url.createObjectURL(blob);
+  var a = $("<a />");
   a.attr("download", fileName);
   a.attr("href", link);
   $("body").append(a);
   a[0].click();
   $("body").remove(a);
+  setTimeout(function() { url.revokeObjectURL(link); }, 1000);
 }
 
 // Upload files to current directory
 async function upload(input) {
-  let directory = $('#filebrowser').data('directory');
-  if (directory == '/') {
-    directoryUp = '';
-  } else {
-    directoryUp = directory;
+  var fileList = Array.from(input.files || []);
+  var directory = $('#filebrowser').data('directory');
+  var directoryUp = directory === '/' ? '' : directory;
+  for (var file of fileList) {
+    uploadQueue.push({file: file, path: directoryUp + '/' + file.name});
   }
-  if (input.files && input.files[0]) {
-    $('#filebrowser').empty();
-    $('#filebrowser').append($('<div>').attr('id','loading'));
-    for await (let file of input.files) {
-      let reader = new FileReader();
-      reader.onload = async function(e) {
-        let fileName = file.name;
-        if (e.total < 200000000) {
-          let data = e.target.result;
-          $('#filebrowser').append($('<div>').text('Uploading ' + fileName));
-          if (file == input.files[input.files.length - 1]) {
-            socket.emit('uploadfile', [directory, directoryUp + '/' + fileName, data, true]);
-          } else {
-            socket.emit('uploadfile', [directory, directoryUp + '/' + fileName, data, false]);
-          }
-        } else {
-          $('#filebrowser').append($('<div>').text('File too big ' + fileName));
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          socket.emit('getfiles', directory);
-        }
-      }
-      reader.readAsArrayBuffer(file);
+  processUploadQueue();
+}
+
+function processUploadQueue() {
+  if (uploading || uploadQueue.length === 0) return;
+  uploading = true;
+  var item = uploadQueue.shift();
+  var directory = $('#filebrowser').data('directory');
+  showLoading();
+
+  readFileBuffer(item.file).then(function(data) {
+    if (data.byteLength >= 200000000) {
+      $('#filebrowser').empty();
+      $('#filebrowser').append($('<div>').text('File too big ' + item.file.name));
+      uploading = false;
+      processUploadQueue();
+      return;
     }
-  }
+    $('#filebrowser').append($('<div>').text('Uploading ' + item.file.name));
+    send({type: 'upload', directory: directory, path: item.path, render: uploadQueue.length === 0});
+    socket.send(data);
+  }).catch(function(error) {
+    alert('Upload failed: ' + error.message);
+    uploading = false;
+    processUploadQueue();
+  });
+}
+
+function readFileBuffer(file) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function() { resolve(reader.result); };
+    reader.onerror = function() { reject(reader.error || new Error('read failed')); };
+    reader.readAsArrayBuffer(file);
+  });
 }
 
 // Delete file/folder
 function deleter(item) {
-  let directory = $('#filebrowser').data('directory');
-  $('#filebrowser').empty();
-  $('#filebrowser').append($('<div>').attr('id','loading'));
-  socket.emit('deletefiles', [item, directory]);
+  var directory = $('#filebrowser').data('directory');
+  showLoading();
+  send({type: 'delete', item: item, directory: directory});
 }
 
 // Delete file/folder
 function createFolder() {
-  let directory = $('#filebrowser').data('directory');
-  if (directory == '/') {
-    directoryUp = '';
-  } else {
-    directoryUp = directory;
-  }
-  let folderName = $('#folderName').val();
+  var directory = $('#filebrowser').data('directory');
+  var directoryUp = directory === '/' ? '' : directory;
+  var folderName = $('#folderName').val();
   $('#folderName').val('');
   if ((folderName.length == 0) || (folderName.includes('/'))) {
     alert('Bad or Null Directory Name');
     return '';
   }
+  showLoading();
+  send({type: 'createfolder', dir: directoryUp + '/' + folderName, directory: directory});
+}
+
+function showLoading() {
   $('#filebrowser').empty();
   $('#filebrowser').append($('<div>').attr('id','loading'));
-  socket.emit('createfolder', [directoryUp + '/' + folderName, directory]);
 }
 
 // Handle drag and drop
 async function dropFiles(ev) {
   ev.preventDefault();
-  $('#filebrowser').empty();
-  $('#filebrowser').append($('<div>').attr('id','loading'));
+  showLoading();
   $('#dropzone').css({'visibility':'hidden','opacity':0});
-  let directory = $('#filebrowser').data('directory');
-  if (directory == '/') {
-    directoryUp = '';
-  } else {
-    directoryUp = directory;
+  var directory = $('#filebrowser').data('directory');
+  var directoryUp = directory === '/' ? '' : directory;
+  var entries = await getAllFileEntries(ev.dataTransfer.items);
+  for (var entry of entries) {
+    var fullPath = entry.fullPath.replace(/^\/+/, '');
+    var file = await getFileFromEntry(entry);
+    uploadQueue.push({file: file, path: directoryUp + '/' + fullPath});
   }
-  let items = await getAllFileEntries(event.dataTransfer.items);
-  for await (let item of items) {
-    let fullPath = item.fullPath;
-    item.file(async function(file) {
-      let reader = new FileReader();
-      reader.onload = async function(e) {
-        let fileName = file.name;
-        if (e.total < 200000000) {
-          let data = e.target.result;
-          $('#filebrowser').append($('<div>').text('Uploading ' + fileName));
-          if (item == items[items.length - 1]) {
-            socket.emit('uploadfile', [directory, directoryUp + '/' + fullPath, data, true]);
-          } else {
-            socket.emit('uploadfile', [directory, directoryUp + '/' + fullPath, data, false]);
-          }
-        } else {
-          $('#filebrowser').append($('<div>').text('File too big ' + fileName));
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          socket.emit('getfiles', directory);
-        }
-      }
-      reader.readAsArrayBuffer(file);
-    });
-  }
+  processUploadQueue();
 }
+
+function getFileFromEntry(entry) {
+  return new Promise(function(resolve, reject) {
+    entry.file(resolve, reject);
+  });
+}
+
 // Drop handler function to get all files
 async function getAllFileEntries(dataTransferItemList) {
-  let fileEntries = [];
+  var fileEntries = [];
   // Use BFS to traverse entire directory/file structure
-  let queue = [];
+  var queue = [];
   // Unfortunately dataTransferItemList is not iterable i.e. no forEach
-  for (let i = 0; i < dataTransferItemList.length; i++) {
+  for (var i = 0; i < dataTransferItemList.length; i++) {
     queue.push(dataTransferItemList[i].webkitGetAsEntry());
   }
   while (queue.length > 0) {
-    let entry = queue.shift();
+    var entry = queue.shift();
     if (entry.isFile) {
       fileEntries.push(entry);
     } else if (entry.isDirectory) {
-      let reader = entry.createReader();
+      var reader = entry.createReader();
       queue.push(...await readAllDirectoryEntries(reader));
     }
   }
@@ -219,8 +256,8 @@ async function getAllFileEntries(dataTransferItemList) {
 }
 // Get all the entries (files or sub-directories) in a directory by calling readEntries until it returns empty array
 async function readAllDirectoryEntries(directoryReader) {
-  let entries = [];
-  let readEntries = await readEntriesPromise(directoryReader);
+  var entries = [];
+  var readEntries = await readEntriesPromise(directoryReader);
   while (readEntries.length > 0) {
     entries.push(...readEntries);
     readEntries = await readEntriesPromise(directoryReader);
@@ -256,7 +293,3 @@ window.addEventListener("dragleave", function(ev) {
 function allowDrop(ev) {
   ev.preventDefault();
 }
-
-// Incoming socket requests
-socket.on('renderfiles', renderFiles);
-socket.on('sendfile', sendFile);

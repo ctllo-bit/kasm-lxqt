@@ -1,6 +1,6 @@
 {
-  "name": "<%- title -%>",
-  "short_name": "<%- title -%>",
+  "name": "{{.Title}}",
+  "short_name": "{{.Title}}",
   "manifest_version": 2,
   "version": "0.4.1",
   "display": "fullscreen",

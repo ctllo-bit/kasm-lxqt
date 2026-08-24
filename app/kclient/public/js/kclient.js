@@ -3,8 +3,9 @@ var eventMethod = window.addEventListener ? "addEventListener" : "attachEvent";
 var eventer = window[eventMethod];
 var messageEvent = eventMethod == "attachEvent" ? "onmessage" : "message";
 eventer(messageEvent,function(e) {
-  if (event.data && event.data.action) {
-    switch (event.data.action) {
+  var data = e.data || event.data;
+  if (data && data.action) {
+    switch (data.action) {
       case 'control_open':
         openToggle('#lsbar');
         break;
@@ -51,26 +52,32 @@ PCM.prototype.init = function() {
 PCM.prototype.feed = function(data) {
   lock = true;
   // Convert bytes to typed array then float32 array
-  let i16Array = new Int16Array(data, 0, data.length);
+  let sampleCount = Math.floor(data.byteLength / 2);
+  if (sampleCount === 0) return;
+  let i16Array = new Int16Array(data, 0, sampleCount);
   let f32Array = Float32Array.from(i16Array, x => x / 32767);
-  buffer = new Float32Array([...buffer, ...f32Array]);
-  let buffAudio = this.audioCtx.createBuffer(2, buffer.length, 44100);
-  let duration = buffAudio.duration / 2;
+  let combined = new Float32Array(buffer.length + f32Array.length);
+  combined.set(buffer, 0);
+  combined.set(f32Array, buffer.length);
+  buffer = combined;
+
+  // Only schedule complete stereo frames and keep the remainder buffered
+  let usable = buffer.length - (buffer.length % 2);
+  if (usable === 0) return;
+  let buffAudio = this.audioCtx.createBuffer(2, usable / 2, 44100);
+  let duration = buffAudio.duration;
   if ((duration > .05) || (playing)) {
     playing = true;
     let buffSource = this.audioCtx.createBufferSource();
-    let arrLength = buffer.length / 2;
     let left = buffAudio.getChannelData(0);
     let right = buffAudio.getChannelData(1);
-    let byteCount = 0;
-    let offset = 1;
-    for (let count = 0; count < arrLength; count++) {
-      left[count] = buffer[byteCount];
-      byteCount += 2;
-      right[count] = buffer[offset];
-      offset += 2;
+    let count = 0;
+    for (let offset = 0; offset < usable; offset += 2) {
+      left[count] = buffer[offset];
+      right[count] = buffer[offset + 1];
+      count++;
     }
-    buffer = [];
+    buffer = buffer.slice(usable);
     if (this.startTime < this.audioCtx.currentTime) {
       this.startTime = this.audioCtx.currentTime;
     }
@@ -128,25 +135,56 @@ function fullscreen() {
   }
 }
 
-// Websocket comms for audio
+//// WebSocket comms for audio ////
 var host = window.location.hostname;
 var port = window.location.port;
 var protocol = window.location.protocol;
-var path = window.location.pathname;
-var socket = io(protocol + '//' + host + ':' + port, { path: path + 'audio/socket.io'});
+var path = window.location.pathname.replace(/\/+$/, '');
+var wsProtocol = protocol === 'https:' ? 'wss://' : 'ws://';
+var socket = null;
+var socketConnected = false;
+var audioOpen = false;
 var player = {};
 var micEnabled = false;
 var micWorkletNode; // To store the AudioWorkletNode
 var audio_context;
 
+function connectAudioSocket() {
+  socket = new WebSocket(wsProtocol + host + ':' + port + (path ? path + '/' : '/') + 'audio/ws');
+  socket.binaryType = 'arraybuffer';
+  socket.onopen = function() {
+    socketConnected = true;
+    if (audioOpen) {
+      socket.send(JSON.stringify({type: 'open'}));
+    }
+  };
+  socket.onmessage = function(event) {
+    if (typeof event.data === 'string') return;
+    if (('audioCtx' in player) && (player.audioCtx)) {
+      processAudio(event.data);
+    }
+  };
+  socket.onclose = function() {
+    socketConnected = false;
+    setTimeout(connectAudioSocket, 3000);
+  };
+}
+connectAudioSocket();
+
 function audio() {
   if (('audioCtx' in player) && (player.audioCtx)) {
     player.destroy();
-    socket.emit('close', '');
+    audioOpen = false;
+    if (socketConnected) {
+      socket.send(JSON.stringify({type: 'close'}));
+    }
     $('#audioButton').removeClass("icons-selected");
     return;
   }
-  socket.emit('open', '');
+  audioOpen = true;
+  if (socketConnected) {
+    socket.send(JSON.stringify({type: 'open'}));
+  }
   player = new PCM();
   $('#audioButton').addClass("icons-selected");
 }
@@ -154,8 +192,6 @@ function audio() {
 function processAudio(data) {
   player.feed(data);
 }
-
-socket.on('audio', processAudio);
 
 // Define the AudioWorkletProcessor as a string.
 const micWorkletProcessorCode = `
@@ -203,7 +239,7 @@ async function mic() {
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-    audio_context = new window.AudioContext();
+    audio_context = new window.AudioContext({sampleRate: 44100});
 
     // Create a URL for the AudioWorkletProcessor code
     const micWorkletProcessorBlob = new Blob([micWorkletProcessorCode], { type: 'text/javascript' });
@@ -214,7 +250,9 @@ async function mic() {
     micWorkletNode = new AudioWorkletNode(audio_context, 'mic-worklet-processor');
 
     micWorkletNode.port.onmessage = (event) => {
-      socket.emit('micdata', event.data.buffer);
+      if (socketConnected && socket.readyState === WebSocket.OPEN) {
+        socket.send(event.data.buffer);
+      }
     };
 
     let source = audio_context.createMediaStreamSource(stream);
