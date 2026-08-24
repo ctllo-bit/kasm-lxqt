@@ -22,7 +22,7 @@ User=1000
 Group=1001
 
 Environment=DISPLAY=:1
-ExecStart=/usr/bin/kasmvncserver -securitytypes None -websocketPort 6901
+ExecStart=/usr/bin/kasmvncserver
 ExecStop=/usr/bin/kasmvncserver -kill
 
 Restart=always

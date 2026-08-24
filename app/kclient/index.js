@@ -200,7 +200,7 @@ const WebSocket = require('ws');
 const httpProxy = require('http-proxy');
 
 const proxy = httpProxy.createProxyServer({
-    target:'https://127.0.0.1:6901',
+    target:'https://127.0.0.1:8088',
     ws:true,
     secure:false
 });
