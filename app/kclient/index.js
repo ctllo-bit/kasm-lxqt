@@ -1,14 +1,14 @@
 // LinuxServer KasmVNC Client
 
 //// Env variables ////
-var CUSTOM_USER = process.env.CUSTOM_USER || 'abc';
-var PASSWORD = process.env.PASSWORD || 'abc';
+var CUSTOM_USER = 'abc';
+var PASSWORD = '123456';
 var SUBFOLDER = process.env.SUBFOLDER || '/';
 var TITLE = process.env.TITLE || 'KasmVNC Client';
 var FM_HOME = process.env.FM_HOME || '/config';
 var PATH;
 if (SUBFOLDER != '/') {
-  PATH = '&path=' + SUBFOLDER.substring(1) + 'websockify'
+  PATH = '&path=' + SUBFOLDER.substring(1) + '/websockify'
 } else {
   PATH = false;
 }
@@ -192,6 +192,51 @@ aio.on('connection', function (socket) {
   socket.on('micdata', micData);
 });
 
+// websocket proxy
+const WebSocket = require('ws');
+const httpProxy = require('http-proxy');
+
+const proxy = httpProxy.createProxyServer({
+    target:'https://127.0.0.1:6901',
+    ws:true,
+    secure:false
+});
+
+
+proxy.on('proxyReqWs',(proxyReq,req,socket)=>{
+    console.log("proxyReqWs:",req.url);
+});
+
+
+proxy.on('error',(err,req,socket)=>{
+    console.log("proxy error:",err.message);
+    socket.destroy();
+});
+
+
+
 // Spin up application on 6900
 app.use(SUBFOLDER, baseRouter);
+
+http.on('upgrade',(req,socket,head)=>{
+
+    console.log("WS upgrade:",req.url);
+
+    if(req.url.includes('/websockify')){
+
+        req.headers['authorization'] =
+            'Basic ' + Buffer.from(
+                CUSTOM_USER + ':' + PASSWORD
+            ).toString('base64');
+
+        proxy.ws(req,socket,head);
+
+    }
+    else{
+        socket.destroy();
+    }
+
+});
+
+
 http.listen(6900);

@@ -6,10 +6,11 @@
   "dependencies": {
     "ejs": "^3.1.8",
     "express": "^4.18.2",
+    "http-proxy": "^1.18.1",
     "pulseaudio2": "^0.5.5",
-    "socket.io": "^4.6.0"
+    "socket.io": "^4.6.0",
+    "ws": "^8.21.3"
   },
-  "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

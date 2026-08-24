@@ -22,7 +22,7 @@ User=1000
 Group=1001
 
 Environment=DISPLAY=:1
-ExecStart=/usr/bin/kasmvncserver
+ExecStart=/usr/bin/kasmvncserver -securitytypes None -websocketPort 6901
 ExecStop=/usr/bin/kasmvncserver -kill
 
 Restart=always
@@ -61,6 +61,15 @@ network:
   websocket_port: ${wizard_port}
   use_ipv4: true
   use_ipv6: false
+
+server:
+  http:
+    headers:
+      - Cross-Origin-Embedder-Policy=require-corp
+      - Cross-Origin-Opener-Policy=same-origin
+    httpd_directory: /usr/share/kasmvnc/www
+  advanced:
+    kasm_password_file: ${HOME}/.kasmpasswd
 
 logging:
   log_writer_name: all
