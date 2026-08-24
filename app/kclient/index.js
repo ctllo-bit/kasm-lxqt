@@ -157,12 +157,15 @@ aio.on('connection', function (socket) {
   function open() {
     if (audioEnabled) {
       if (record) record.end();
-      record = pulse.createRecordStream({
-                 device: 'auto_null.monitor',
-                 channels: 2,
-                 rate: 44100,
-                 format: 'S16LE',
-               });
+      record = record = pulse.createRecordStream({
+                      device: 'kasm_sink.monitor',
+                      channels: 2,
+                      rate: 44100,
+                      format: 'S16LE',
+                  });
+      record.on('error', function(err){
+          console.log("Pulse record error:", err.message);
+      });
       record.on('connection', function(){
         record.on('data', function(chunk) {
           // Only send non-zero audio data
