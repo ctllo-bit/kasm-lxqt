@@ -27,9 +27,9 @@ set-default-source virtmic
 EOF
 
 # 启用 PulseAudio
-sudo -u ${CURRENT_USER} XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart pulseaudio
+sudo loginctl enable-linger ${CURRENT_USER}
+sudo -u ${CURRENT_USER} XDG_RUNTIME_DIR=/run/user/1000 systemctl --user enable --now pulseaudio.service
 # 启用 LightDM
-sudo systemctl restart lightdm
-
+sudo systemctl start lightdm
 
 exit 0
