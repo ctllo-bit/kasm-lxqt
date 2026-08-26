@@ -55,16 +55,16 @@ func newServer(cfg Config, baseDir string) http.Handler {
 		)
 
 	})
-	mux.HandleFunc("/manifest.json", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /manifest.json", func(w http.ResponseWriter, r *http.Request) {
 		renderTemplate(w, manifestTmpl, pageData{Title: cfg.Title}, "application/json; charset=utf-8")
 	})
-	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, filepath.Join(baseDir, "public", "favicon.ico"))
 	})
-	mux.HandleFunc("/files", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /files", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, filepath.Join(baseDir, "public", "filebrowser.html"))
 	})
-	mux.HandleFunc("/files/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /files/", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, filepath.Join(baseDir, "public", "filebrowser.html"))
 	})
 	mux.Handle("/public/", http.StripPrefix("/public", http.FileServer(http.Dir(filepath.Join(baseDir, "public")))))
@@ -108,9 +108,9 @@ func newServer(cfg Config, baseDir string) http.Handler {
 	}
 	mux.HandleFunc("/websockify", vncProxy.ServeHTTP)
 	mux.HandleFunc("/websockify/", vncProxy.ServeHTTP)
-	mux.HandleFunc("/files/ws", files.handleWS)
-	mux.HandleFunc("/audio/ws", audio.handleWS)
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /files/ws", files.handleWS)
+	mux.HandleFunc("GET /audio/ws", audio.handleWS)
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
