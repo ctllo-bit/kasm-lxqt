@@ -1,13 +1,11 @@
 #!/bin/bash
-
-# 配置本地用户
 CURRENT_USER=$(getent passwd 1000 | cut -d: -f1)
 if [ -z "${CURRENT_USER}" ]; then
     exit 1
 fi
 
+# 配置本地用户
 HOME_DIR="/home/${CURRENT_USER}"
-# 新建家目录
 sudo mkdir "${HOME_DIR}"
 sudo chown -R 1000:1001 "${HOME_DIR}"
 sudo chmod 700 "${HOME_DIR}"
@@ -15,16 +13,25 @@ sudo chmod 700 "${HOME_DIR}"
 # 创建一个独立的 kasm 用户
 sudo useradd -m -s /bin/bash kasm
 echo "kasm:${wizard_password}" | sudo chpasswd
-sudo chmod 700 "/home/kasm"
 # 附加硬件与设备访问权限
-sudo usermod -aG ssl-cert,audio,video,render kasm
+sudo usermod -aG ssl-cert kasm
 
 sudo apt update
 # 安装 LXQt 桌面
 sudo apt install -y dbus-x11 lxqt-core lightdm lightdm-gtk-greeter
 
-# 用户级 PulseAudio
+# kasm 开启 linger
 sudo loginctl enable-linger kasm
+
+# ==========================================
+# 修复与配置 kasm 的 PulseAudio 及环境
+# ==========================================
+KASM_UID=$(id -u kasm)
+if ! grep -q "XDG_RUNTIME_DIR" "/home/kasm/.bashrc"; then
+    echo -e '\n# Fix PulseAudio/Systemd socket path for switched user' | sudo tee -a "/home/kasm/.bashrc"
+    echo "export XDG_RUNTIME_DIR=\"/run/user/${KASM_UID}\"" | sudo tee -a "/home/kasm/.bashrc"
+fi
+
 # 启用 LightDM
 sudo systemctl start lightdm
 

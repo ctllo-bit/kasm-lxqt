@@ -5,8 +5,6 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
 }
 
-KASM_UID=$(id -u kasm)
-
 # 安装KasmVNC
 sudo apt install /var/apps/kasm-lxqt/target/server/kasmvncserver_bookworm_*.deb -y
 log_msg "[INFO] KasmVNC Server 版本: $(dpkg-query -W -f='${Version}' kasmvncserver 2>/dev/null)"
@@ -25,7 +23,6 @@ Restart=always
 RestartSec=3
 
 Environment=DISPLAY=:1
-Environment=HOME=/home/kasm
 ExecStart=/usr/bin/kasmvncserver
 ExecStop=/usr/bin/kasmvncserver -kill
 
@@ -61,20 +58,16 @@ sudo systemctl daemon-reload
 sudo systemctl enable kasmvnc.service
 sudo systemctl enable kasm-client.service
 
+# 切换为kasm用户
 if [ "$EUID" -eq 0 ]; then
-    exec runuser -u "kasm" -- "$0" "$@"
+    exec runuser -u kasm -- "$0" "$@"
 fi
 
-log_msg "当前执行脚本的用户: $(whoami)" 
-mkdir -p ~/.config/pulse/default.pa.d
-
+# 配置 PulseAudio
+mkdir -p ~/.config/pulse
 cat > ~/.config/pulse/default.pa <<'EOF'
 .include /etc/pulse/default.pa
-.include /home/kasm/.config/pulse/default.pa.d/kasm.pa
-EOF
 
-# 配置 PulseAudio
-sudo cat > "/home/kasm/.config/pulse/default.pa.d/kasm.pa" <<'EOF'
 load-module module-null-sink sink_name=kasm_sink sink_properties=device.description=KasmAudio
 load-module module-remap-source source_name=virtmic master=kasm_sink.monitor
 
@@ -84,13 +77,12 @@ EOF
 
 systemctl --user enable --now pulseaudio.service
 
-
-mkdir ~/.vnc
-# 创建Kasm用户
+# 配置 Kasm 账号
 rm -f ~/.kasmpasswd
 echo -e "${wizard_password}\n${wizard_password}\n" | kasmvncpasswd -u "${wizard_username}" -ow
 
 # 创建kasm配置文件
+mkdir ~/.vnc
 cat > "$HOME/.vnc/kasmvnc.yaml" <<EOF
 desktop:
   resolution:
@@ -127,14 +119,12 @@ kasmvncserver -kill :1
 # 生成LXQt配置
 cat > "$HOME/.vnc/xstartup" <<EOF
 #!/bin/sh
-
 unset SESSION_MANAGER
 unset DBUS_SESSION_BUS_ADDRESS
 
-export PULSE_SERVER=unix:/run/user/${KASM_UID}/pulse/native
-
+export PULSE_SERVER=unix:/run/user/$(id -u)/pulse/native
 exec startlxqt
 EOF
-chmod +x ~/.vnc/xstartup      
+chmod +x ~/.vnc/xstartup
 
 exit 0
