@@ -82,7 +82,7 @@ desktop:
 network:
   protocol: http
   interface: 127.0.0.1
-  websocket_port: ${wizard_port}
+  websocket_port: 6901
   use_ipv4: true
   use_ipv6: false
 

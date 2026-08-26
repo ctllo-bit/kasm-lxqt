@@ -31,7 +31,7 @@ func loadConfig() Config {
 		Title:          envOr("TITLE", "KasmVNC Client"),
 		FMHome:         envOr("FM_HOME", "/home/abc"),
 		VNCDir:         envOr("VNC_DIR", "/usr/share/kasmvnc/www"),
-		VNCProxyTarget: envOr("VNC_PROXY_TARGET", "https://127.0.0.1:8088"),
+		VNCProxyTarget: envOr("VNC_PROXY_TARGET", "https://127.0.0.1:6901"),
 		Port:           envInt("PORT", 6900),
 		AudioDevice:    envOr("AUDIO_DEVICE", "kasm_sink.monitor"),
 		AudioServer:    envOr("AUDIO_SERVER", "/run/user/1000/pulse/native"),
