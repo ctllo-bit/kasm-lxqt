@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"crypto/tls"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -16,18 +15,30 @@ import (
 )
 
 // vncProxy forwards KasmVNC websockify WebSocket connections to the backend
-// VNC server and injects the Basic auth header, matching the old Node proxy.
+// VNC server. It forwards client-provided headers (Authorization, Cookie,
+// Origin, Host) unchanged so that KasmVNC handles authentication natively.
 type vncProxy struct {
-	target   string
-	user     string
-	password string
+	target string
 }
 
-func newVNCProxy(target, user, password string) *vncProxy {
-	return &vncProxy{target: target, user: user, password: password}
+func newVNCProxy(target string) *vncProxy {
+	return &vncProxy{target: target}
 }
 
 func (p *vncProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Log key request attributes for debugging without printing secrets.
+	auth := r.Header.Get("Authorization")
+	authPresent := "false"
+	if auth != "" {
+		authPresent = "true"
+	}
+	// Extract cookie names but not values.
+	cookieNames := []string{}
+	for _, c := range r.Cookies() {
+		cookieNames = append(cookieNames, c.Name)
+	}
+	log.Printf("vncProxy ServeHTTP path=%s host=%s upgrade=%v auth=%s origin=%q cookies=%v remote=%s",
+		r.URL.Path, r.Host, isWebSocketUpgrade(r), authPresent, r.Header.Get("Origin"), cookieNames, r.RemoteAddr)
 	if !isWebSocketUpgrade(r) {
 		http.NotFound(w, r)
 		return
@@ -60,17 +71,7 @@ func (p *vncProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer upstream.Close()
 
-	outbound := &http.Request{
-		Method: http.MethodGet,
-		URL: &url.URL{
-			Path:     r.URL.Path,
-			RawQuery: r.URL.RawQuery,
-		},
-		Host:   target.Host,
-		Header: r.Header.Clone(),
-	}
-	outbound.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(p.user+":"+p.password)))
-	outbound.Header.Del("Proxy-Connection")
+	outbound := buildUpstreamRequest(r, target)
 	if err := outbound.Write(upstream); err != nil {
 		log.Printf("vnc proxy write request: %v", err)
 		writeBadGateway(client)
@@ -80,6 +81,29 @@ func (p *vncProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := relayHandshake(client, upstream); err != nil {
 		log.Printf("vnc proxy relay handshake: %v", err)
 	}
+}
+
+func buildUpstreamRequest(r *http.Request, target *url.URL) *http.Request {
+	outbound := &http.Request{
+		Method: http.MethodGet,
+		URL: &url.URL{
+			Path:     r.URL.Path,
+			RawQuery: r.URL.RawQuery,
+		},
+		// Preserve the original client Host so the upstream sees the same
+		// Host header the client sent (this allows websockify/KasmVNC to
+		// validate Host/Origin as if the client connected directly).
+		Host:   r.Host,
+		Header: r.Header.Clone(),
+	}
+	// Do not forward Proxy-Connection header. Do NOT strip Authorization;
+	// client-provided auth (Cookie/Token/Authorization) must be forwarded
+	// unchanged so KasmVNC native authentication works.
+	outbound.Header.Del("Proxy-Connection")
+	// Make sure the Host header matches the upstream target so TLS/SNI and
+	// virtual-hosting checks behave as expected.
+	// Do not overwrite the Host header; let the client's Host be forwarded.
+	return outbound
 }
 
 func isWebSocketUpgrade(r *http.Request) bool {
@@ -111,11 +135,7 @@ func relayHandshake(client, upstream net.Conn) error {
 	if err != nil {
 		return err
 	}
-	if code, ok := parseStatusCode(statusLine); !ok || code != http.StatusSwitchingProtocols {
-		_, _ = client.Write([]byte(statusLine))
-		return fmt.Errorf("upstream returned %q", strings.TrimSpace(statusLine))
-	}
-
+	code, ok := parseStatusCode(statusLine)
 	var headers strings.Builder
 	for {
 		line, err := reader.ReadString('\n')
@@ -127,8 +147,12 @@ func relayHandshake(client, upstream net.Conn) error {
 			break
 		}
 	}
+	// Forward the complete status line and headers to the client.
 	if _, err := client.Write([]byte(statusLine + headers.String())); err != nil {
 		return err
+	}
+	if !ok || code != http.StatusSwitchingProtocols {
+		return fmt.Errorf("upstream returned %q", strings.TrimSpace(statusLine))
 	}
 	if reader.Buffered() > 0 {
 		buffered, _ := reader.Peek(reader.Buffered())

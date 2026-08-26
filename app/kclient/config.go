@@ -9,8 +9,6 @@ import (
 // Config holds all runtime configuration, mirroring the environment
 // variables the Node.js backend consumed.
 type Config struct {
-	CustomUser     string
-	Password       string
 	Subfolder      string
 	Title          string
 	FMHome         string
@@ -25,8 +23,6 @@ type Config struct {
 
 func loadConfig() Config {
 	return Config{
-		CustomUser:     envOr("CUSTOM_USER", "abc"),
-		Password:       envOr("PASSWORD", "123456"),
 		Subfolder:      envOr("SUBFOLDER", "/"),
 		Title:          envOr("TITLE", "KasmVNC Client"),
 		FMHome:         envOr("FM_HOME", "/home/abc"),

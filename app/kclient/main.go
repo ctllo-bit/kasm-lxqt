@@ -1,9 +1,12 @@
 package main
 
 import (
+	"crypto/tls"
 	"html/template"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -28,7 +31,6 @@ func main() {
 }
 
 func newServer(cfg Config, baseDir string) http.Handler {
-	indexTmpl := template.Must(template.ParseFiles(filepath.Join(baseDir, "public", "index.html")))
 	manifestTmpl := template.Must(template.ParseFiles(filepath.Join(baseDir, "public", "manifest.json")))
 
 	files := &filesHub{
@@ -36,33 +38,88 @@ func newServer(cfg Config, baseDir string) http.Handler {
 		maxUploadSize: cfg.MaxUploadSize,
 	}
 	audio := newAudioHub(cfg.AudioDevice, cfg.AudioServer, cfg.MicSocket)
-	vncProxy := newVNCProxy(cfg.VNCProxyTarget, cfg.CustomUser, cfg.Password)
+	vncProxy := newVNCProxy(cfg.VNCProxyTarget)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		renderTemplate(w, indexTmpl, pageData{Title: cfg.Title, Path: cfg.VNCPath()}, "text/html; charset=utf-8")
+	// Standardize patterns: ServeMux expects plain path patterns (no method prefix).
+	// Redirect top-level requests to the proxied KasmVNC UI so the browser
+	// will load the KasmVNC page as a top-level document and handle native
+	// authentication (Basic / session cookie) correctly instead of inside
+	// an iframe where prompts may be suppressed.
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+
+		target := "/vnc/index.html?autoconnect=1&resize=remote&clipboard_up=true&clipboard_down=true&clipboard_seamless=true&show_control_bar=true"
+
+		if p := cfg.VNCPath(); p != "" {
+			target += p
+		}
+
+		http.Redirect(w, r, target, http.StatusFound)
 	})
-	mux.HandleFunc("GET /manifest.json", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/manifest.json", func(w http.ResponseWriter, r *http.Request) {
 		renderTemplate(w, manifestTmpl, pageData{Title: cfg.Title}, "application/json; charset=utf-8")
 	})
-	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, filepath.Join(baseDir, "public", "favicon.ico"))
 	})
-	mux.HandleFunc("GET /files", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/files", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, filepath.Join(baseDir, "public", "filebrowser.html"))
 	})
-	mux.HandleFunc("GET /files/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/files/", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, filepath.Join(baseDir, "public", "filebrowser.html"))
 	})
-	mux.Handle("GET /public/", http.StripPrefix("/public", http.FileServer(http.Dir(filepath.Join(baseDir, "public")))))
-	mux.Handle("GET /vnc/", http.StripPrefix("/vnc", http.FileServer(http.Dir(cfg.VNCDir))))
+	mux.Handle("/public/", http.StripPrefix("/public", http.FileServer(http.Dir(filepath.Join(baseDir, "public")))))
+
+	// Proxy /vnc/ requests to the upstream KasmVNC server so the browser
+	// sees the real KasmVNC UI and any authentication challenges (e.g.
+	// Basic WWW-Authenticate) rather than serving static files locally.
+	if targetURL, err := url.Parse(cfg.VNCProxyTarget); err == nil {
+		proxy := httputil.NewSingleHostReverseProxy(targetURL)
+		originalDirector := proxy.Director
+		proxy.Director = func(r *http.Request) {
+			originalDirector(r)
+			// Ensure Host is set to upstream so upstream's virtual host and
+			// cookie domains match expectations.
+			r.Host = targetURL.Host
+		}
+		// Log upstream responses (status and cookie names) for debugging so we
+		// can see if KasmVNC sets session cookies required for WebSocket auth.
+		proxy.ModifyResponse = func(resp *http.Response) error {
+			cookieNames := []string{}
+			for _, c := range resp.Cookies() {
+				cookieNames = append(cookieNames, c.Name)
+			}
+			log.Printf("vnc proxy upstream resp path=%s status=%d set_cookies=%v", resp.Request.URL.Path, resp.StatusCode, cookieNames)
+			return nil
+		}
+		// Allow communicating with upstream TLS targets that use self-signed
+		// certs in local test environments by skipping verification here,
+		// matching dialUpstream's InsecureSkipVerify behavior.
+		proxy.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		mux.HandleFunc("/vnc/", func(w http.ResponseWriter, r *http.Request) {
+			// Rewrite the request path to remove the /vnc prefix so it maps to
+			// the upstream resource paths.
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, "/vnc")
+			proxy.ServeHTTP(w, r)
+		})
+	} else {
+		mux.Handle("/vnc/", http.StripPrefix("/vnc", http.FileServer(http.Dir(cfg.VNCDir))))
+	}
 	mux.HandleFunc("/websockify", vncProxy.ServeHTTP)
 	mux.HandleFunc("/websockify/", vncProxy.ServeHTTP)
-	mux.HandleFunc("GET /files/ws", files.handleWS)
-	mux.HandleFunc("GET /audio/ws", audio.handleWS)
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/files/ws", files.handleWS)
+	mux.HandleFunc("/audio/ws", audio.handleWS)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
+	})
+
+	// Catch-all debug route to help diagnose unmatched paths when testing.
+	mux.HandleFunc("/__debug_unmatched__", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("UNMATCHED DEBUG PATH=%s Host=%s Remote=%s", r.URL.Path, r.Host, r.RemoteAddr)
+		http.NotFound(w, r)
 	})
 
 	return mount(cfg.Subfolder, mux)
