@@ -31,6 +31,7 @@ func main() {
 }
 
 func newServer(cfg Config, baseDir string) http.Handler {
+	indexTmpl := template.Must(template.ParseFiles(filepath.Join(baseDir, "public", "index.html")))
 	manifestTmpl := template.Must(template.ParseFiles(filepath.Join(baseDir, "public", "manifest.json")))
 
 	files := &filesHub{
@@ -41,20 +42,18 @@ func newServer(cfg Config, baseDir string) http.Handler {
 	vncProxy := newVNCProxy(cfg.VNCProxyTarget)
 
 	mux := http.NewServeMux()
-	// Standardize patterns: ServeMux expects plain path patterns (no method prefix).
-	// Redirect top-level requests to the proxied KasmVNC UI so the browser
-	// will load the KasmVNC page as a top-level document and handle native
-	// authentication (Basic / session cookie) correctly instead of inside
-	// an iframe where prompts may be suppressed.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
-		target := "/vnc/index.html?autoconnect=1&resize=remote&clipboard_up=true&clipboard_down=true&clipboard_seamless=true&show_control_bar=true"
+		renderTemplate(
+			w,
+			indexTmpl,
+			pageData{
+				Title: cfg.Title,
+				Path:  cfg.VNCPath(),
+			},
+			"text/html; charset=utf-8",
+		)
 
-		if p := cfg.VNCPath(); p != "" {
-			target += p
-		}
-
-		http.Redirect(w, r, target, http.StatusFound)
 	})
 	mux.HandleFunc("/manifest.json", func(w http.ResponseWriter, r *http.Request) {
 		renderTemplate(w, manifestTmpl, pageData{Title: cfg.Title}, "application/json; charset=utf-8")
