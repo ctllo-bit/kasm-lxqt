@@ -25,12 +25,12 @@ func loadConfig() Config {
 	return Config{
 		Subfolder:      envOr("SUBFOLDER", "/"),
 		Title:          envOr("TITLE", "KasmVNC Client"),
-		FMHome:         envOr("FM_HOME", "/home/abc"),
+		FMHome:         envOr("FM_HOME", "/home/kasm"),
 		VNCDir:         envOr("VNC_DIR", "/usr/share/kasmvnc/www"),
 		VNCProxyTarget: envOr("VNC_PROXY_TARGET", "https://127.0.0.1:6901"),
 		Port:           envInt("PORT", 6900),
 		AudioDevice:    envOr("AUDIO_DEVICE", "kasm_sink.monitor"),
-		AudioServer:    envOr("AUDIO_SERVER", "/run/user/1000/pulse/native"),
+		AudioServer:    envOr("AUDIO_SERVER", "/run/user/1001/pulse/native"),
 		MicSocket:      envOr("MIC_SOCK", "/defaults/mic.sock"),
 		MaxUploadSize:  envInt64("MAX_UPLOAD_SIZE", 200000000),
 	}

@@ -1,10 +1,11 @@
 #!/bin/bash
 LOG_FILE="${TRIM_DATA_SHARE_PATHS%%:*}/info.log"
-CURRENT_USER=$(getent passwd 1000 | cut -d: -f1)
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
 }
+
+KASM_UID=$(id -u kasm)
 
 # 安装KasmVNC
 sudo apt install /var/apps/kasm-lxqt/target/server/kasmvncserver_bookworm_*.deb -y
@@ -18,12 +19,13 @@ After=network.target
 
 [Service]
 Type=forking
-User=1000
-Group=1001
+User=kasm
+Group=kasm
 Restart=always
 RestartSec=3
 
 Environment=DISPLAY=:1
+Environment=HOME=/home/kasm
 ExecStart=/usr/bin/kasmvncserver
 ExecStop=/usr/bin/kasmvncserver -kill
 
@@ -43,8 +45,8 @@ Requires=kasmvnc.service
 
 [Service]
 Type=simple
-User=1000
-Group=1001
+User=kasm
+Group=kasm
 Restart=always
 RestartSec=3
 
@@ -54,19 +56,36 @@ ExecStart=${TRIM_APPDEST}/server/kclient
 WantedBy=multi-user.target
 EOF
 
-
 # 开机自启 Kasm 
 sudo systemctl daemon-reload
 sudo systemctl enable kasmvnc.service
 sudo systemctl enable kasm-client.service
 
 if [ "$EUID" -eq 0 ]; then
-    exec runuser -u "${CURRENT_USER}" -- "$0" "$@"
+    exec runuser -u "kasm" -- "$0" "$@"
 fi
 
-mkdir ~/.vnc
 log_msg "当前执行脚本的用户: $(whoami)" 
+mkdir -p ~/.config/pulse/default.pa.d
 
+cat > ~/.config/pulse/default.pa <<'EOF'
+.include /etc/pulse/default.pa
+.include /home/kasm/.config/pulse/default.pa.d/kasm.pa
+EOF
+
+# 配置 PulseAudio
+sudo cat > "/home/kasm/.config/pulse/default.pa.d/kasm.pa" <<'EOF'
+load-module module-null-sink sink_name=kasm_sink sink_properties=device.description=KasmAudio
+load-module module-remap-source source_name=virtmic master=kasm_sink.monitor
+
+set-default-sink kasm_sink
+set-default-source virtmic
+EOF
+
+systemctl --user enable --now pulseaudio.service
+
+
+mkdir ~/.vnc
 # 创建Kasm用户
 rm -f ~/.kasmpasswd
 echo -e "${wizard_password}\n${wizard_password}\n" | kasmvncpasswd -u "${wizard_username}" -ow
@@ -106,15 +125,16 @@ kasmvncserver -select-de lxqt
 kasmvncserver -kill :1
 
 # 生成LXQt配置
-cat > ~/.vnc/xstartup <<'EOF'
+cat > "$HOME/.vnc/xstartup" <<EOF
 #!/bin/sh
 
 unset SESSION_MANAGER
 unset DBUS_SESSION_BUS_ADDRESS
 
-export PULSE_SERVER=unix:/run/user/1000/pulse/native
+export PULSE_SERVER=unix:/run/user/${KASM_UID}/pulse/native
 
 exec startlxqt
 EOF
 chmod +x ~/.vnc/xstartup      
+
 exit 0
