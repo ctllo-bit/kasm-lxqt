@@ -127,4 +127,27 @@ exec startlxqt
 EOF
 chmod +x ~/.vnc/xstartup
 
+# kclient 配置文件
+cat > "$HOME/.vnc/kclient.yaml" <<EOF
+subfolder: "/"
+title: "KasmVNC Client"
+
+fm_home: "/home/kasm"
+
+vnc:
+  dir: "/usr/share/kasmvnc/www"
+  proxy_target: "https://127.0.0.1:6901"
+
+server:
+  port: ${wizard_port}
+
+audio:
+  device: "kasm_sink.monitor"
+  server: "/run/user/1001/pulse/native"
+
+mic_socket: "/defaults/mic.sock"
+
+max_upload_size: 200000000
+EOF
+
 exit 0

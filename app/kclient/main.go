@@ -24,8 +24,8 @@ func main() {
 
 	handler := newServer(cfg, baseDir)
 
-	log.Printf("kclient listening on port %d (subfolder %q, file root %s)", cfg.Port, cfg.Subfolder, cleanRoot(cfg.FMHome))
-	if err := http.ListenAndServe(":"+strconv.Itoa(cfg.Port), handler); err != nil {
+	log.Printf("kclient listening on port %d (subfolder %q, file root %s)", cfg.Server.Port, cfg.Subfolder, cleanRoot(cfg.FMHome))
+	if err := http.ListenAndServe(":"+strconv.Itoa(cfg.Server.Port), handler); err != nil {
 		log.Fatalf("listen: %v", err)
 	}
 }
@@ -38,8 +38,8 @@ func newServer(cfg Config, baseDir string) http.Handler {
 		root:          cleanRoot(cfg.FMHome),
 		maxUploadSize: cfg.MaxUploadSize,
 	}
-	audio := newAudioHub(cfg.AudioDevice, cfg.AudioServer, cfg.MicSocket)
-	vncProxy := newVNCProxy(cfg.VNCProxyTarget)
+	audio := newAudioHub(cfg.Audio.Device, cfg.Audio.Server, cfg.MicSocket)
+	vncProxy := newVNCProxy(cfg.VNC.ProxyTarget)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +72,7 @@ func newServer(cfg Config, baseDir string) http.Handler {
 	// Proxy /vnc/ requests to the upstream KasmVNC server so the browser
 	// sees the real KasmVNC UI and any authentication challenges (e.g.
 	// Basic WWW-Authenticate) rather than serving static files locally.
-	if targetURL, err := url.Parse(cfg.VNCProxyTarget); err == nil {
+	if targetURL, err := url.Parse(cfg.VNC.ProxyTarget); err == nil {
 		proxy := httputil.NewSingleHostReverseProxy(targetURL)
 		originalDirector := proxy.Director
 		proxy.Director = func(r *http.Request) {
@@ -104,7 +104,7 @@ func newServer(cfg Config, baseDir string) http.Handler {
 			proxy.ServeHTTP(w, r)
 		})
 	} else {
-		mux.Handle("/vnc/", http.StripPrefix("/vnc", http.FileServer(http.Dir(cfg.VNCDir))))
+		mux.Handle("/vnc/", http.StripPrefix("/vnc", http.FileServer(http.Dir(cfg.VNC.Dir))))
 	}
 	mux.HandleFunc("/websockify", vncProxy.ServeHTTP)
 	mux.HandleFunc("/websockify/", vncProxy.ServeHTTP)
