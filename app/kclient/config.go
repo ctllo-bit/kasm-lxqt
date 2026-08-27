@@ -19,9 +19,7 @@ type Config struct {
 		ProxyTarget string `yaml:"proxy_target"`
 	} `yaml:"vnc"`
 
-	Server struct {
-		Port int `yaml:"port"`
-	} `yaml:"server"`
+	Socket string `yaml:"socket"`
 
 	Audio struct {
 		Device string `yaml:"device"`
@@ -41,11 +39,7 @@ func loadConfig() Config {
 
 		FMHome: "/home/kasm",
 
-		Server: struct {
-			Port int `yaml:"port"`
-		}{
-			Port: 6900,
-		},
+		Socket: "/var/apps/kasm-lxqt/target/kclient.sock",
 
 		MaxUploadSize: 200000000,
 	}
@@ -65,28 +59,14 @@ func loadConfig() Config {
 	return cfg
 }
 
-// func loadConfig() Config {
-// 	return Config{
-// 		Subfolder:      envOr("SUBFOLDER", "/"),
-// 		Title:          envOr("TITLE", "KasmVNC Client"),
-// 		FMHome:         envOr("FM_HOME", "/home/kasm"),
-// 		VNCDir:         envOr("VNC_DIR", "/usr/share/kasmvnc/www"),
-// 		VNCProxyTarget: envOr("VNC_PROXY_TARGET", "https://127.0.0.1:6901"),
-// 		Port:           envInt("PORT", 6900),
-// 		AudioDevice:    envOr("AUDIO_DEVICE", "kasm_sink.monitor"),
-// 		AudioServer:    envOr("AUDIO_SERVER", "/run/user/1001/pulse/native"),
-// 		MicSocket:      envOr("MIC_SOCK", "/defaults/mic.sock"),
-// 		MaxUploadSize:  envInt64("MAX_UPLOAD_SIZE", 200000000),
-// 	}
-// }
-
 // VNCPath mirrors the Node.js PATH logic used to pass the subfolder
 // through to the KasmVNC iframe so KasmVNC connects to /websockify.
 func (c Config) VNCPath() string {
-	if c.Subfolder == "/" {
+	if c.Subfolder == "/" || c.Subfolder == "" {
 		return ""
 	}
-	return "&path=" + strings.TrimPrefix(c.Subfolder, "/") + "/websockify"
+
+	return "&path=" + strings.Trim(c.Subfolder, "/") + "/websockify"
 }
 
 func envOr(key, fallback string) string {

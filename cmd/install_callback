@@ -34,6 +34,7 @@ WantedBy=multi-user.target
 EOF
 
 log_msg "正在创建 proxy 服务..."
+sudo chown -R kasm:kasm "${TRIM_APPDEST}"
 sudo tee "/etc/systemd/system/kasm-client.service" > /dev/null <<EOF
 [Unit]
 Description=kasm-client
@@ -129,7 +130,7 @@ chmod +x ~/.vnc/xstartup
 
 # kclient 配置文件
 cat > "$HOME/.vnc/kclient.yaml" <<EOF
-subfolder: "/"
+subfolder: "/app/kasm-lxqt/"
 title: "KasmVNC Client"
 
 fm_home: "/home/kasm"
@@ -138,8 +139,7 @@ vnc:
   dir: "/usr/share/kasmvnc/www"
   proxy_target: "https://127.0.0.1:6901"
 
-server:
-  port: ${wizard_port}
+socket:  ${TRIM_APPDEST}/kclient.sock
 
 audio:
   device: "kasm_sink.monitor"

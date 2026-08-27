@@ -1,16 +1,21 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
+	"errors"
 	"html/template"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
+	"syscall"
+	"time"
 )
 
 type pageData struct {
@@ -24,9 +29,46 @@ func main() {
 
 	handler := newServer(cfg, baseDir)
 
-	log.Printf("kclient listening on port %d (subfolder %q, file root %s)", cfg.Server.Port, cfg.Subfolder, cleanRoot(cfg.FMHome))
-	if err := http.ListenAndServe(":"+strconv.Itoa(cfg.Server.Port), handler); err != nil {
-		log.Fatalf("listen: %v", err)
+	socket := cfg.Socket
+
+	// 清理旧 socket
+	if err := os.RemoveAll(socket); err != nil {
+		log.Fatalf("remove old socket: %v", err)
+	}
+
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		log.Fatalf("listen unix socket %s: %v", socket, err)
+	}
+	defer os.Remove(socket)
+
+	// 给 nginx/fnOS gateway访问
+	if err := os.Chmod(socket, 0660); err != nil {
+		log.Printf("chmod socket: %v", err)
+	}
+
+	server := &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	// 优雅退出
+	go func() {
+		ch := make(chan os.Signal, 1)
+		signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
+
+		<-ch
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+		defer cancel()
+		server.Shutdown(ctx)
+	}()
+
+	log.Printf("kclient socket: %s", socket)
+
+	if err := server.Serve(listener); err != nil &&
+		!errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
 	}
 }
 

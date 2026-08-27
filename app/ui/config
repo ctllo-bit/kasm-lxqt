@@ -4,9 +4,10 @@
             "title": "LXQT",
             "icon": "images/icon_{0}.png",
             "type": "url",
-            "protocol": "http",
-            "port": "${wizard_port}",
-            "url": "/",
+            "protocol": "",
+            "gatewaySocket": "kclient.sock",
+            "gatewayPrefix": "/app/kasm-lxqt",
+            "url": "/app/kasm-lxqt",
             "allUsers": false,
             "control": {
                 "accessPerm": "readonly"
