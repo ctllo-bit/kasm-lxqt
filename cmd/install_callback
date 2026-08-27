@@ -130,7 +130,7 @@ chmod +x ~/.vnc/xstartup
 
 # kclient 配置文件
 cat > "$HOME/.vnc/kclient.yaml" <<EOF
-subfolder: "/app/kasm-lxqt/"
+subfolder: "/app/kasm-lxqt"
 title: "KasmVNC Client"
 
 fm_home: "/home/kasm"
