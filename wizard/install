@@ -24,7 +24,7 @@
             },
             {
                 "type": "tips",
-                "helpText": "请设置用户名及登陆密码，用于Kasmvnc连接使用。"
+                "helpText": "请为KasmVNC设置用户名及密码，用于连接远程桌面。"
             },
             {
                 "type": "text",
@@ -47,7 +47,6 @@
                 "type": "password",
                 "field": "wizard_password",
                 "label": "密码",
-                "initValue": "123456",
                 "rules": [
                     {
                         "required": true,
@@ -62,6 +61,10 @@
                         "message": "密码不能包含空格"
                     }
                 ]
+            },
+            {
+                "type": "tips",
+                "helpText": "<font color=\"red\">建议：sudo apt install lxqt-core，安装桌面核心后再安装此应用。</font>"
             }
         ]
     }
