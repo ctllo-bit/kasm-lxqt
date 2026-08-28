@@ -23,7 +23,7 @@ type Config struct {
 	SSL struct {
 		CertFile string `yaml:"pem_certificate"`
 		KeyFile  string `yaml:"pem_key"`
-	} `yaml:"vnc"`
+	} `yaml:"ssl"`
 
 	Audio struct {
 		Device string `yaml:"device"`
