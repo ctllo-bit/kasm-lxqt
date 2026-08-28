@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -67,27 +66,4 @@ func (c Config) VNCPath() string {
 	}
 
 	return prefix + "/websockify"
-}
-
-func envOr(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
-}
-
-func envInt(key string, fallback int) int {
-	value, err := strconv.Atoi(os.Getenv(key))
-	if err != nil || os.Getenv(key) == "" {
-		return fallback
-	}
-	return value
-}
-
-func envInt64(key string, fallback int64) int64 {
-	value, err := strconv.ParseInt(os.Getenv(key), 10, 64)
-	if err != nil || os.Getenv(key) == "" {
-		return fallback
-	}
-	return value
 }
