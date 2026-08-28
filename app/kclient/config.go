@@ -15,7 +15,6 @@ type Config struct {
 	FMHome string `yaml:"fm_home"`
 
 	VNC struct {
-		Dir         string `yaml:"dir"`
 		ProxyTarget string `yaml:"proxy_target"`
 	} `yaml:"vnc"`
 
@@ -62,11 +61,10 @@ func loadConfig() Config {
 // VNCPath mirrors the Node.js PATH logic used to pass the subfolder
 // through to the KasmVNC iframe so KasmVNC connects to /websockify.
 func (c Config) VNCPath() string {
-	if c.Subfolder == "/" || c.Subfolder == "" {
+	if c.Subfolder == "/" {
 		return ""
 	}
-
-	return "&path=" + strings.Trim(c.Subfolder, "/") + "/websockify"
+	return "&path=" + strings.TrimPrefix(c.Subfolder, "/") + "/websockify"
 }
 
 func envOr(key, fallback string) string {
