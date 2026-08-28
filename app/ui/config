@@ -4,7 +4,7 @@
             "title": "LXQT",
             "icon": "images/icon_{0}.png",
             "type": "url",
-            "protocol": "http",
+            "protocol": "https",
             "port": "${wizard_port}",
             "url": "/",
             "allUsers": false,

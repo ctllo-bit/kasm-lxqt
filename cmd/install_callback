@@ -34,6 +34,7 @@ WantedBy=multi-user.target
 EOF
 
 log_msg "正在创建 proxy 服务..."
+sudo chown -R kasm:kasm "${TRIM_APPDEST}"
 sudo tee "/etc/systemd/system/kasm-client.service" > /dev/null <<EOF
 [Unit]
 Description=kasm-client
@@ -97,6 +98,11 @@ network:
   use_ipv4: true
   use_ipv6: false
 
+  ssl:
+    pem_certificate: /etc/ssl/certs/ssl-cert-snakeoil.pem
+    pem_key: /etc/ssl/private/ssl-cert-snakeoil.key
+    require_ssl: true
+
 server:
   http:
     headers:
@@ -135,11 +141,12 @@ title: "KasmVNC Client"
 fm_home: "/home/kasm"
 
 vnc:
-  dir: "/usr/share/kasmvnc/www"
+  port: ${wizard_port}
   proxy_target: "https://127.0.0.1:6901"
 
-server:
-  port: ${wizard_port}
+ssl:
+  pem_certificate: /etc/ssl/certs/ssl-cert-snakeoil.pem
+  pem_key: /etc/ssl/private/ssl-cert-snakeoil.key
 
 audio:
   device: "kasm_sink.monitor"
