@@ -38,11 +38,7 @@ func main() {
 	}
 
 	// 优雅退出
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		syscall.SIGINT,
-		syscall.SIGTERM,
-	)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	errCh := make(chan error, 1)
@@ -111,19 +107,13 @@ func createListener(cfg Config) (net.Listener, error) {
 			return nil, err
 		}
 
-		listener, err := net.Listen(
-			"unix",
-			cfg.Socket,
-		)
+		listener, err := net.Listen("unix", cfg.Socket)
 		if err != nil {
 			return nil, err
 		}
 
 		// 允许 nginx / fnOS gateway 访问。
-		if err := os.Chmod(
-			cfg.Socket,
-			0660,
-		); err != nil {
+		if err := os.Chmod(cfg.Socket, 0660); err != nil {
 			_ = listener.Close()
 			return nil, err
 		}
@@ -132,11 +122,7 @@ func createListener(cfg Config) (net.Listener, error) {
 	}
 
 	addr := ":" + strconv.Itoa(cfg.VNC.Port)
-
-	return net.Listen(
-		"tcp",
-		addr,
-	)
+	return net.Listen("tcp", addr)
 }
 
 // serve 根据配置决定 HTTP Server 的工作方式。
@@ -150,17 +136,9 @@ func createListener(cfg Config) (net.Listener, error) {
 //	ServeTLS(listener, certFile, keyFile)
 //
 // 这样 handler 始终只有一份。
-func serve(
-	server *http.Server,
-	listener net.Listener,
-	cfg Config,
-) error {
+func serve(server *http.Server, listener net.Listener, cfg Config) error {
 	if cfg.Socket != "" {
-		log.Printf(
-			"kclient listening on unix socket: %s",
-			cfg.Socket,
-		)
-
+		log.Printf("kclient listening on unix socket: %s", cfg.Socket)
 		return server.Serve(listener)
 	}
 
@@ -168,27 +146,15 @@ func serve(
 	keyFile := cfg.SSL.KeyFile
 
 	if certFile == "" {
-		return errors.New(
-			"HTTPS certificate file is empty",
-		)
+		return errors.New("HTTPS certificate file is empty")
 	}
 
 	if keyFile == "" {
-		return errors.New(
-			"HTTPS private key file is empty",
-		)
+		return errors.New("HTTPS private key file is empty")
 	}
+	log.Printf("kclient HTTPS listening on :%d", cfg.VNC.Port)
 
-	log.Printf(
-		"kclient HTTPS listening on :%d",
-		cfg.VNC.Port,
-	)
-
-	return server.ServeTLS(
-		listener,
-		certFile,
-		keyFile,
-	)
+	return server.ServeTLS(listener, certFile, keyFile)
 }
 
 func listenerDescription(cfg Config) string {
@@ -196,61 +162,25 @@ func listenerDescription(cfg Config) string {
 		return "unix://" + cfg.Socket
 	}
 
-	return "https://0.0.0.0:" +
-		strconv.Itoa(cfg.VNC.Port)
+	return "https://0.0.0.0:" + strconv.Itoa(cfg.VNC.Port)
 }
 
-func newServer(
-	cfg Config,
-	baseDir string,
-) http.Handler {
-	publicDir := filepath.Join(
-		baseDir,
-		"public",
-	)
+func newServer(cfg Config, baseDir string) http.Handler {
+	publicDir := filepath.Join(baseDir, "public")
+	indexTmpl := template.Must(template.ParseFiles(filepath.Join(publicDir, "index.html")))
+	manifestTmpl := template.Must(template.ParseFiles(filepath.Join(publicDir, "manifest.json")))
 
-	indexTmpl := template.Must(
-		template.ParseFiles(
-			filepath.Join(
-				publicDir,
-				"index.html",
-			),
-		),
-	)
+	files := &filesHub{root: cleanRoot(cfg.FMHome), maxUploadSize: cfg.MaxUploadSize}
 
-	manifestTmpl := template.Must(
-		template.ParseFiles(
-			filepath.Join(
-				publicDir,
-				"manifest.json",
-			),
-		),
-	)
-
-	files := &filesHub{
-		root: cleanRoot(cfg.FMHome),
-
-		maxUploadSize: cfg.MaxUploadSize,
-	}
-
-	audio := newAudioHub(
-		cfg.Audio.Device,
-		cfg.Audio.Server,
-		cfg.MicSocket,
-	)
+	audio := newAudioHub(cfg.Audio.Device, cfg.Audio.Server, cfg.MicSocket)
 
 	// ------------------------------------------------------------
 	// KasmVNC ReverseProxy
 	// ------------------------------------------------------------
 
-	vncProxy, err := newVNCProxy(
-		cfg.VNC.ProxyTarget,
-	)
+	vncProxy, err := newVNCProxy(cfg.VNC.ProxyTarget)
 	if err != nil {
-		log.Fatalf(
-			"create KasmVNC proxy: %v",
-			err,
-		)
+		log.Fatalf("create KasmVNC proxy: %v", err)
 	}
 
 	mux := http.NewServeMux()
@@ -258,124 +188,50 @@ func newServer(
 	// ------------------------------------------------------------
 	// 首页
 	// ------------------------------------------------------------
-
-	mux.HandleFunc(
-		"GET /{$}",
-		func(
-			w http.ResponseWriter,
-			r *http.Request,
-		) {
-			log.Printf(
-				"render index: subfolder=%q vncPath=%q",
-				cfg.Subfolder,
-				cfg.VNCPath(),
-			)
-
-			renderTemplate(
-				w,
-				indexTmpl,
-				pageData{
-					Title: cfg.Title,
-					Path:  cfg.VNCPath(),
-				},
-				"text/html; charset=utf-8",
-			)
+	mux.HandleFunc("GET /{$}",
+		func(w http.ResponseWriter, r *http.Request) {
+			log.Printf("render index: subfolder=%q vncPath=%q", cfg.Subfolder, cfg.VNCPath())
+			renderTemplate(w, indexTmpl, pageData{Title: cfg.Title, Path: cfg.VNCPath()}, "text/html; charset=utf-8")
 		},
 	)
 
 	// ------------------------------------------------------------
 	// Manifest
 	// ------------------------------------------------------------
-
-	mux.HandleFunc(
-		"GET /manifest.json",
-		func(
-			w http.ResponseWriter,
-			r *http.Request,
-		) {
-			renderTemplate(
-				w,
-				manifestTmpl,
-				pageData{
-					Title: cfg.Title,
-				},
-				"application/json; charset=utf-8",
-			)
+	mux.HandleFunc("GET /manifest.json",
+		func(w http.ResponseWriter, r *http.Request) {
+			renderTemplate(w, manifestTmpl, pageData{Title: cfg.Title}, "application/json; charset=utf-8")
 		},
 	)
 
 	// ------------------------------------------------------------
 	// Favicon
 	// ------------------------------------------------------------
-
-	mux.HandleFunc(
-		"GET /favicon.ico",
-		func(
-			w http.ResponseWriter,
-			r *http.Request,
-		) {
-			http.ServeFile(
-				w,
-				r,
-				filepath.Join(
-					publicDir,
-					"favicon.ico",
-				),
-			)
+	mux.HandleFunc("GET /favicon.ico",
+		func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFile(w, r, filepath.Join(publicDir, "favicon.ico"))
 		},
 	)
 
 	// ------------------------------------------------------------
 	// File Manager
 	// ------------------------------------------------------------
-
-	mux.HandleFunc(
-		"GET /files",
-		func(
-			w http.ResponseWriter,
-			r *http.Request,
-		) {
-			http.ServeFile(
-				w,
-				r,
-				filepath.Join(
-					publicDir,
-					"filebrowser.html",
-				),
-			)
+	mux.HandleFunc("GET /files",
+		func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFile(w, r, filepath.Join(publicDir, "filebrowser.html"))
 		},
 	)
 
-	mux.HandleFunc(
-		"GET /files/",
-		func(
-			w http.ResponseWriter,
-			r *http.Request,
-		) {
-			http.ServeFile(
-				w,
-				r,
-				filepath.Join(
-					publicDir,
-					"filebrowser.html",
-				),
-			)
+	mux.HandleFunc("GET /files/",
+		func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFile(w, r, filepath.Join(publicDir, "filebrowser.html"))
 		},
 	)
 
 	// ------------------------------------------------------------
 	// Static
 	// ------------------------------------------------------------
-
-	mux.Handle(
-		"/public/",
-		http.StripPrefix(
-			"/public",
-			http.FileServer(
-				http.Dir(publicDir),
-			),
-		),
-	)
+	mux.Handle("/public/", http.StripPrefix("/public", http.FileServer(http.Dir(publicDir))))
 
 	// ------------------------------------------------------------
 	// KasmVNC
@@ -385,13 +241,7 @@ func newServer(
 	// https://127.0.0.1:6901/index.html
 	// ------------------------------------------------------------
 
-	mux.Handle(
-		"/vnc/",
-		http.StripPrefix(
-			"/vnc",
-			vncProxy,
-		),
-	)
+	mux.Handle("/vnc/", http.StripPrefix("/vnc", vncProxy))
 
 	// ------------------------------------------------------------
 	// KasmVNC WebSocket
@@ -400,49 +250,29 @@ func newServer(
 	// /websockify/*
 	// ------------------------------------------------------------
 
-	mux.Handle(
-		"/websockify",
-		vncProxy,
-	)
-
-	mux.Handle(
-		"/websockify/",
-		vncProxy,
-	)
+	mux.Handle("/websockify", vncProxy)
+	mux.Handle("/websockify/", vncProxy)
 
 	// ------------------------------------------------------------
 	// File Manager WebSocket
 	// ------------------------------------------------------------
 
-	mux.HandleFunc(
-		"GET /files/ws",
-		files.handleWS,
-	)
+	mux.HandleFunc("GET /files/ws", files.handleWS)
 
 	// ------------------------------------------------------------
 	// Audio WebSocket
 	// ------------------------------------------------------------
 
-	mux.HandleFunc(
-		"GET /audio/ws",
-		audio.handleWS,
-	)
+	mux.HandleFunc("GET /audio/ws", audio.handleWS)
 
 	// ------------------------------------------------------------
 	// Health
 	// ------------------------------------------------------------
 
-	mux.HandleFunc(
-		"GET /healthz",
-		func(
-			w http.ResponseWriter,
-			r *http.Request,
-		) {
+	mux.HandleFunc("GET /healthz",
+		func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-
-			_, _ = w.Write(
-				[]byte("ok"),
-			)
+			_, _ = w.Write([]byte("ok"))
 		},
 	)
 
@@ -450,91 +280,39 @@ func newServer(
 	// Debug
 	// ------------------------------------------------------------
 
-	mux.HandleFunc(
-		"/__debug_unmatched__",
-		func(
-			w http.ResponseWriter,
-			r *http.Request,
-		) {
-			log.Printf(
-				"UNMATCHED DEBUG PATH=%s Host=%s Remote=%s",
-				r.URL.Path,
-				r.Host,
-				r.RemoteAddr,
-			)
+	mux.HandleFunc("/__debug_unmatched__",
+		func(w http.ResponseWriter, r *http.Request) {
+			log.Printf("UNMATCHED DEBUG PATH=%s Host=%s Remote=%s", r.URL.Path, r.Host, r.RemoteAddr)
 
-			http.NotFound(
-				w,
-				r,
-			)
+			http.NotFound(w, r)
 		},
 	)
 
-	return mount(
-		cfg.Subfolder,
-		mux,
-	)
+	return mount(cfg.Subfolder, mux)
 }
 
-func renderTemplate(
-	w http.ResponseWriter,
-	tmpl *template.Template,
-	data pageData,
-	contentType string,
-) {
-	w.Header().Set(
-		"Content-Type",
-		contentType,
-	)
+func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data pageData, contentType string) {
+	w.Header().Set("Content-Type", contentType)
 
-	if err := tmpl.Execute(
-		w,
-		data,
-	); err != nil {
-		http.Error(
-			w,
-			err.Error(),
-			http.StatusInternalServerError,
-		)
+	if err := tmpl.Execute(w, data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func mount(
-	subfolder string,
-	handler http.Handler,
-) http.Handler {
-	if subfolder == "/" ||
-		subfolder == "" {
+func mount(subfolder string, handler http.Handler) http.Handler {
+	if subfolder == "/" || subfolder == "" {
 		return handler
 	}
 
-	prefix := strings.TrimSuffix(
-		subfolder,
-		"/",
-	)
+	prefix := strings.TrimSuffix(subfolder, "/")
 
 	mux := http.NewServeMux()
 
-	mux.Handle(
-		prefix+"/",
-		http.StripPrefix(
-			prefix,
-			handler,
-		),
-	)
+	mux.Handle(prefix+"/", http.StripPrefix(prefix, handler))
 
-	mux.HandleFunc(
-		prefix,
-		func(
-			w http.ResponseWriter,
-			r *http.Request,
-		) {
-			http.Redirect(
-				w,
-				r,
-				prefix+"/",
-				http.StatusMovedPermanently,
-			)
+	mux.HandleFunc(prefix,
+		func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, prefix+"/", http.StatusMovedPermanently)
 		},
 	)
 
@@ -542,9 +320,7 @@ func mount(
 }
 
 func cleanRoot(root string) string {
-	if abs, err := filepath.Abs(
-		filepath.Clean(root),
-	); err == nil {
+	if abs, err := filepath.Abs(filepath.Clean(root)); err == nil {
 		return abs
 	}
 
@@ -555,17 +331,13 @@ func resolveBaseDir() string {
 	if exe, err := os.Executable(); err == nil {
 		dir := filepath.Dir(exe)
 
-		if _, err := os.Stat(
-			filepath.Join(dir, "public"),
-		); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, "public")); err == nil {
 			return dir
 		}
 	}
 
 	if cwd, err := os.Getwd(); err == nil {
-		if _, err := os.Stat(
-			filepath.Join(cwd, "public"),
-		); err == nil {
+		if _, err := os.Stat(filepath.Join(cwd, "public")); err == nil {
 			return cwd
 		}
 	}
