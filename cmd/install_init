@@ -31,7 +31,7 @@ if ! grep -q "XDG_RUNTIME_DIR" "/home/kasm/.bashrc"; then
     echo -e '\n# Fix PulseAudio/Systemd socket path for switched user' | sudo tee -a "/home/kasm/.bashrc"
     echo "export XDG_RUNTIME_DIR=\"/run/user/${KASM_UID}\"" | sudo tee -a "/home/kasm/.bashrc"
 fi
-
+sudo -u ${CURRENT_USER} XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start pulseaudio.service
 # 启用 LightDM
 sudo systemctl start lightdm
 
