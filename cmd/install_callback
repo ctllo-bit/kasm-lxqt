@@ -135,7 +135,7 @@ chmod +x ~/.vnc/xstartup
 
 # kclient 配置文件
 cat > "$HOME/.vnc/kclient.yaml" <<EOF
-subfolder: "/"
+subfolder: "/app/kasm-lxqt"
 title: "KasmVNC Client"
 
 fm_home: "/home/kasm"
@@ -144,9 +144,7 @@ vnc:
   port: ${wizard_port}
   proxy_target: "https://127.0.0.1:6901"
 
-ssl:
-  pem_certificate: /etc/ssl/certs/ssl-cert-snakeoil.pem
-  pem_key: /etc/ssl/private/ssl-cert-snakeoil.key
+socket:  ${TRIM_APPDEST}/kclient.sock
 
 audio:
   device: "kasm_sink.monitor"

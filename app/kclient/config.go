@@ -43,6 +43,8 @@ func loadConfig() Config {
 
 		FMHome: "/home/kasm",
 
+		Socket: "",
+
 		MaxUploadSize: 200000000,
 	}
 
