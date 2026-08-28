@@ -98,6 +98,8 @@ func newServer(cfg Config, baseDir string) http.Handler {
 	// ------------------------------------------------------------
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("render index: subfolder=%q vncPath=%q", cfg.Subfolder, cfg.VNCPath())
+
 		renderTemplate(
 			w,
 			indexTmpl,
@@ -158,43 +160,66 @@ func newServer(cfg Config, baseDir string) http.Handler {
 
 	targetURL, err := url.Parse(cfg.VNC.ProxyTarget)
 	if err != nil {
-		log.Fatalf(
-			"invalid VNC proxy target %q: %v",
-			cfg.VNC.ProxyTarget,
-			err,
-		)
+		log.Fatalf("invalid VNC proxy target %q: %v", cfg.VNC.ProxyTarget, err)
 	}
 
-	log.Printf(
-		"KasmVNC proxy target: %s",
-		targetURL.String(),
-	)
+	log.Printf("KasmVNC proxy target: %s", targetURL.String())
 
-	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			in := pr.In
+			out := pr.Out
 
-	originalDirector := proxy.Director
+			// 完整复制客户端 Header，保证 WebSocket Upgrade、
+			// Authorization、Cookie、Origin 等信息继续传递。
+			out.Header = in.Header.Clone()
 
-	proxy.Director = func(r *http.Request) {
-		originalDirector(r)
+			out.URL.Scheme = targetURL.Scheme
+			out.URL.Host = targetURL.Host
+			out.URL.Path = in.URL.Path
+			out.URL.RawPath = ""
+			out.URL.RawQuery = in.URL.RawQuery
 
-		// KasmVNC 本地 HTTPS 服务
-		r.Host = targetURL.Host
+			out.Host = targetURL.Host
 
-		// 调试日志
-		log.Printf(
-			"KasmVNC proxy: %s %s -> %s%s",
-			r.Method,
-			r.URL.Path,
-			targetURL.Host,
-			r.URL.Path,
-		)
-	}
+			log.Printf(
+				"KasmVNC OUT: method=%s path=%s query=%q upgrade=%q connection=%q",
+				in.Method,
+				in.URL.Path,
+				in.URL.RawQuery,
+				in.Header.Get("Upgrade"),
+				in.Header.Get("Connection"),
+			)
+		},
 
-	// KasmVNC 使用自签名证书。
-	// 因为这里只在 127.0.0.1 内部通信，所以跳过证书验证。
-	proxy.Transport = &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+
+		ModifyResponse: func(resp *http.Response) error {
+			log.Printf(
+				"KasmVNC response: path=%s status=%d",
+				resp.Request.URL.Path,
+				resp.StatusCode,
+			)
+			return nil
+		},
+
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			log.Printf(
+				"KasmVNC proxy error: method=%s path=%s err=%v",
+				r.Method,
+				r.URL.Path,
+				err,
+			)
+
+			http.Error(
+				w,
+				"KasmVNC upstream unavailable",
+				http.StatusBadGateway,
+			)
 		},
 	}
 
@@ -215,21 +240,6 @@ func newServer(cfg Config, baseDir string) http.Handler {
 		return nil
 	}
 
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		log.Printf(
-			"KasmVNC proxy error: method=%s path=%s err=%v",
-			r.Method,
-			r.URL.Path,
-			err,
-		)
-
-		http.Error(
-			w,
-			"KasmVNC upstream unavailable",
-			http.StatusBadGateway,
-		)
-	}
-
 	// ------------------------------------------------------------
 	// /vnc/* -> https://127.0.0.1:6901/*
 	// ------------------------------------------------------------
@@ -245,10 +255,32 @@ func newServer(cfg Config, baseDir string) http.Handler {
 	// ------------------------------------------------------------
 
 	mux.HandleFunc("/websockify", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf(
+			"WEBSOCKET IN: method=%s path=%s host=%s upgrade=%q connection=%q sec-websocket-key=%t origin=%q",
+			r.Method,
+			r.URL.Path,
+			r.Host,
+			r.Header.Get("Upgrade"),
+			r.Header.Get("Connection"),
+			r.Header.Get("Sec-WebSocket-Key") != "",
+			r.Header.Get("Origin"),
+		)
+
 		proxy.ServeHTTP(w, r)
 	})
 
 	mux.HandleFunc("/websockify/", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf(
+			"WEBSOCKET IN: method=%s path=%s host=%s upgrade=%q connection=%q sec-websocket-key=%t origin=%q",
+			r.Method,
+			r.URL.Path,
+			r.Host,
+			r.Header.Get("Upgrade"),
+			r.Header.Get("Connection"),
+			r.Header.Get("Sec-WebSocket-Key") != "",
+			r.Header.Get("Origin"),
+		)
+
 		proxy.ServeHTTP(w, r)
 	})
 

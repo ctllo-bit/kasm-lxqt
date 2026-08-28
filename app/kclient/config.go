@@ -61,10 +61,12 @@ func loadConfig() Config {
 // VNCPath mirrors the Node.js PATH logic used to pass the subfolder
 // through to the KasmVNC iframe so KasmVNC connects to /websockify.
 func (c Config) VNCPath() string {
-	if c.Subfolder == "/" {
-		return ""
+	prefix := strings.Trim(c.Subfolder, "/")
+	if prefix == "" {
+		return "websockify"
 	}
-	return "&path=" + strings.TrimPrefix(c.Subfolder, "/") + "/websockify"
+
+	return prefix + "/websockify"
 }
 
 func envOr(key, fallback string) string {
