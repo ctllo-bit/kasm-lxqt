@@ -12,16 +12,6 @@
                         "kasm-lxqt"
                     ]
                 }
-            },
-            {
-                "name": "kasm-lxqt/data",
-                "permission":
-                {
-                    "rw":
-                    [
-                        "kasm-lxqt"
-                    ]
-                }
             }
         ]
     }

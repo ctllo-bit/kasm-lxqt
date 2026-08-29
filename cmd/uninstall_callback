@@ -18,6 +18,10 @@ sudo systemctl daemon-reload
 # 清除这两个服务的历史 failed 状态
 sudo systemctl reset-failed kasm-client.service kasmvnc.service 2>/dev/null
 
+# kasm禁用sudoers 配置
+sudo rm -f /etc/sudoers.d/kasm
+sudo visudo -c
+
 log_msg "kasm 禁用 PulseAudio..."
 sudo -u kasm systemctl --user disable --now pulseaudio.service 2>/dev/null
 sudo loginctl disable-linger kasm
