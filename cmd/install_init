@@ -10,6 +10,28 @@ sudo mkdir "${HOME_DIR}"
 sudo chown -R 1000:1001 "${HOME_DIR}"
 sudo chmod 700 "${HOME_DIR}"
 
+# SSL 证书访问权限
+sudo adduser "${CURRENT_USER}" ssl-cert
+sudo apt update
+
+LOG_FILE="${TRIM_DATA_SHARE_PATHS%%:*}/info.log"
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
+}
+
+# 安装本地桌面
+if [ "${local_terms}" = "true" ]; then
+    sudo apt install -y dbus-x11 cinnamon
+fi
+
+
+
+
+
+
+log_msg "[INFO] sfdsfd...${local_terms}"
+
+log_msg "[INFO] sfdsfd...${remote_type}"
 
 
 exit 0
