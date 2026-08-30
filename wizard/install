@@ -1,5 +1,48 @@
 [
     {
+        "stepTitle": "欢迎安装",
+        "items": [
+            {
+                "type": "radio",
+                "field": "local_terms",
+                "label": "本地Cinnamon桌面",
+                "initValue": "false",
+                "options": [
+                    {
+                        "label": "启用",
+                        "value": "true"
+                    },
+                    {
+                        "label": "关闭",
+                        "value": "false"
+                    }
+                ],
+                "rules": [
+                    {
+                        "required": true,
+                        "message": "请选择本地桌面开启或关闭。"
+                    }
+                ]
+            },
+            {
+                "type": "select",
+                "field": "remote_type",
+                "label": "远程桌面",
+                "initValue": "LXQT",
+                "options": [
+                    {
+                    "label": "LXQT",
+                    "value": "lxqt"
+                    },
+                    {
+                    "label": "XFCE",
+                    "value": "xfce4 xfce4-goodies"
+                    }
+                ]
+            }
+        ]
+    },
+    {
         "stepTitle": "初始化",
         "items": [
             {

@@ -10,46 +10,6 @@ sudo mkdir "${HOME_DIR}"
 sudo chown -R 1000:1001 "${HOME_DIR}"
 sudo chmod 700 "${HOME_DIR}"
 
-# 创建一个独立的 kasm 用户
-sudo useradd -m -g Users -s /bin/bash kasm
-echo "kasm:${wizard_password}" | sudo chpasswd
-sudo chmod 700 "/home/kasm"
-# SSL 证书访问权限
-sudo adduser kasm ssl-cert
 
-# kasm用户添加用户级 sudoers
-sudo install -o root -g root -m 0440 /dev/stdin /etc/sudoers.d/kasm <<'EOF'
-kasm ALL=(ALL:ALL) ALL
-EOF
-# 检查 sudoers 配置
-sudo visudo -c
-
-sudo apt update
-# 安装 LXQt 桌面
-sudo apt install -y dbus-x11 lxqt-core lightdm lightdm-gtk-greeter 
-
-# kasm 开启 linger
-sudo loginctl enable-linger kasm
-
-# 修复与配置 kasm 的 PulseAudio 及环境
-KASM_UID=$(id -u kasm)
-if ! grep -q "XDG_RUNTIME_DIR" "/home/kasm/.bashrc"; then
-    echo -e '\n# Fix PulseAudio/Systemd socket path for switched user' | sudo tee -a "/home/kasm/.bashrc"
-    echo "export XDG_RUNTIME_DIR=\"/run/user/${KASM_UID}\"" | sudo tee -a "/home/kasm/.bashrc"
-fi
-
-# 给 /vol1 r-x，
-# sudo /usr/trim/bin/trimacl -m "a:u:${KASM_UID}:rx:s" /vol1
-# sudo /usr/trim/bin/trimacl -m "a:u:${KASM_UID}:rwxpDaAeEc:sfd" /vol1/1000
-
-# 配置中文字体
-sudo apt install -y locales fonts-noto-cjk fonts-wqy-zenhei
-sudo sed -i '/^# zh_CN.UTF-8 UTF-8/s/^# //' /etc/locale.gen
-sudo locale-gen
-sudo update-locale LANG=zh_CN.UTF-8
-
-sudo -u ${CURRENT_USER} XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start pulseaudio.service
-# 启用 LightDM
-sudo systemctl start lightdm
 
 exit 0
