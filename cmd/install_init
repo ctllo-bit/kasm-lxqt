@@ -13,6 +13,7 @@ sudo chmod 700 "${HOME_DIR}"
 # 创建一个独立的 kasm 用户
 sudo useradd -m -s /bin/bash kasm
 echo "kasm:${wizard_password}" | sudo chpasswd
+sudo chmod 700 "/home/kasm"
 # SSL 证书访问权限
 sudo usermod -aG ssl-cert kasm
 

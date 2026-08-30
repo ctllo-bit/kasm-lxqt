@@ -118,6 +118,17 @@ logging:
   level: 100
 EOF
 
+# SSL cert
+rm -f "${HOME}/.vnc/self.key" "${HOME}/.vnc/self.pem"
+openssl req -x509 \
+  -nodes \
+  -days 3650 \
+  -newkey rsa:2048 \
+  -keyout "${HOME}/.vnc/self.key" \
+  -out "${HOME}/.vnc/self.pem" \
+  -subj "/C=US/ST=VA/L=None/O=None/OU=DoFu/CN=kasm/emailAddress=none@none.none"
+chmod 600 "${HOME}/.vnc/self.key"
+
 # 启动桌面
 kasmvncserver -select-de lxqt
 kasmvncserver -kill :1
@@ -145,8 +156,8 @@ vnc:
   proxy_target: "https://127.0.0.1:6901"
 
 ssl:
-  pem_certificate: /etc/ssl/certs/ssl-cert-snakeoil.pem
-  pem_key: /etc/ssl/private/ssl-cert-snakeoil.key
+  pem_certificate: /home/kasm/.vnc/self.pem
+  pem_key: /home/kasm/.vnc/self.key
 
 audio:
   device: "kasm_sink.monitor"
