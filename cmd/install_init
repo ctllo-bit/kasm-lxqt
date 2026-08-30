@@ -15,7 +15,7 @@ sudo useradd -m -g Users -s /bin/bash kasm
 echo "kasm:${wizard_password}" | sudo chpasswd
 sudo chmod 700 "/home/kasm"
 # SSL 证书访问权限
-sudo usermod -aG ssl-cert kasm
+sudo adduser kasm ssl-cert
 
 # kasm用户添加用户级 sudoers
 sudo install -o root -g root -m 0440 /dev/stdin /etc/sudoers.d/kasm <<'EOF'
