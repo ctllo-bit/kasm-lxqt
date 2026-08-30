@@ -11,7 +11,7 @@ sudo chown -R 1000:1001 "${HOME_DIR}"
 sudo chmod 700 "${HOME_DIR}"
 
 # 创建一个独立的 kasm 用户
-sudo useradd -m -s /bin/bash kasm
+sudo useradd -m -g Users -s /bin/bash kasm
 echo "kasm:${wizard_password}" | sudo chpasswd
 sudo chmod 700 "/home/kasm"
 # SSL 证书访问权限
@@ -37,6 +37,10 @@ if ! grep -q "XDG_RUNTIME_DIR" "/home/kasm/.bashrc"; then
     echo -e '\n# Fix PulseAudio/Systemd socket path for switched user' | sudo tee -a "/home/kasm/.bashrc"
     echo "export XDG_RUNTIME_DIR=\"/run/user/${KASM_UID}\"" | sudo tee -a "/home/kasm/.bashrc"
 fi
+
+# 给 /vol1 r-x，
+# sudo /usr/trim/bin/trimacl -m "a:u:${KASM_UID}:rx:s" /vol1
+# sudo /usr/trim/bin/trimacl -m "a:u:${KASM_UID}:rwxpDaAeEc:sfd" /vol1/1000
 
 # 配置中文字体
 sudo apt install -y locales fonts-noto-cjk fonts-wqy-zenhei

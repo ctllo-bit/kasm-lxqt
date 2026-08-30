@@ -18,7 +18,7 @@ After=network.target
 [Service]
 Type=forking
 User=kasm
-Group=kasm
+Group=Users
 Restart=always
 RestartSec=3
 
@@ -44,7 +44,7 @@ Requires=kasmvnc.service
 [Service]
 Type=simple
 User=kasm
-Group=kasm
+Group=Users
 Restart=always
 RestartSec=3
 
