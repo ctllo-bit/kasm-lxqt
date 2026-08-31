@@ -84,6 +84,7 @@ exec dbus-run-session -- startlxqt
 EOF
 chmod +x "${REMOTE_HOME}/.vnc/xstartup"
 
-
+# 添加标记
+touch "${REMOTE_HOME}/.vnc/.de-was-selected"
 
 exit 0
