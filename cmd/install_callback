@@ -71,14 +71,14 @@ rm -f "${REMOTE_HOME}/.kasmpasswd"
 echo -e "${wizard_password}\n${wizard_password}\n" | kasmvncpasswd -u "${wizard_username}" -ow
 mv ~/.kasmpasswd "${REMOTE_HOME}"
 
-
 # 生成LXQt配置
-mkdir -p "${REMOTE_HOME}/.vnc"
+mkdir "${REMOTE_HOME}/.vnc"
 cat > "${REMOTE_HOME}/.vnc/xstartup" <<EOF
 #!/bin/sh
 unset SESSION_MANAGER
 unset DBUS_SESSION_BUS_ADDRESS
 
+export XDG_RUNTIME_DIR=/run/user/1000
 export PULSE_SERVER=unix:/run/user/1000/pulse/native
 exec dbus-run-session -- startlxqt
 EOF
@@ -86,5 +86,89 @@ chmod +x "${REMOTE_HOME}/.vnc/xstartup"
 
 # 添加标记
 touch "${REMOTE_HOME}/.vnc/.de-was-selected"
+
+# 配置 PulseAudio
+mkdir -p "${REMOTE_HOME}/.config/pulse"
+cat > "${REMOTE_HOME}/.config/pulse/default.pa" <<'EOF'
+.include /etc/pulse/default.pa
+
+load-module module-null-sink sink_name=kasm_sink sink_properties=device.description=KasmAudio
+load-module module-remap-source source_name=virtmic master=kasm_sink.monitor
+
+set-default-sink kasm_sink
+set-default-source virtmic
+EOF
+systemctl --user enable --now pulseaudio.service
+
+# SSL cert
+rm -f "${REMOTE_HOME}/.vnc/self.key" "${REMOTE_HOME}/.vnc/self.pem"
+openssl req -x509 \
+  -nodes \
+  -days 3650 \
+  -newkey rsa:2048 \
+  -keyout "${REMOTE_HOME}/.vnc/self.key" \
+  -out "${REMOTE_HOME}/.vnc/self.pem" \
+  -subj "/C=US/ST=VA/L=None/O=None/OU=DoFu/CN=kasm/emailAddress=none@none.none"
+chmod 600 "${REMOTE_HOME}/.vnc/self.key"
+
+# 创建kasm配置文件
+cat > "${REMOTE_HOME}/.vnc/kasmvnc.yaml" <<EOF
+desktop:
+  resolution:
+    width: 1920
+    height: 1080
+  allow_resize: true
+
+network:
+  protocol: http
+  interface: 127.0.0.1
+  websocket_port: 6901
+  use_ipv4: true
+  use_ipv6: false
+
+  ssl:
+    pem_certificate: /etc/ssl/certs/ssl-cert-snakeoil.pem
+    pem_key: /etc/ssl/private/ssl-cert-snakeoil.key
+    require_ssl: true
+
+server:
+  http:
+    headers:
+      - Cross-Origin-Embedder-Policy=require-corp
+      - Cross-Origin-Opener-Policy=same-origin
+    httpd_directory: /usr/share/kasmvnc/www
+  advanced:
+    kasm_password_file: ${REMOTE_HOME}/.kasmpasswd
+
+logging:
+  log_writer_name: all
+  log_dest: logfile
+  level: 100
+EOF
+
+# 创建 kclient 配置文件
+cat > "${REMOTE_HOME}/.vnc/kclient.yaml" <<EOF
+subfolder: "/"
+title: "KasmVNC Client"
+
+fm_home: "$REMOTE_HOME"
+
+vnc:
+  port: ${wizard_port}
+  proxy_target: "https://127.0.0.1:6901"
+
+ssl:
+  pem_certificate: $REMOTE_HOME/.vnc/self.pem
+  pem_key: $REMOTE_HOME/.vnc/self.key
+
+audio:
+  device: "kasm_sink.monitor"
+  server: "/run/user/1000/pulse/native"
+
+mic_socket: "/defaults/mic.sock"
+
+max_upload_size: 200000000
+EOF
+
 
 exit 0

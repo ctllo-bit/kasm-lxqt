@@ -29,6 +29,9 @@ case "${remote_type}" in
         ;;
 esac
 
+# 当前用户开启 linger
+sudo loginctl enable-linger "${CURRENT_USER}"
+
 # 启用 LightDM
 sudo systemctl start lightdm
 
