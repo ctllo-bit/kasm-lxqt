@@ -38,19 +38,14 @@ type Config struct {
 func loadConfig() Config {
 
 	cfg := Config{
-		Subfolder: "/",
-		Title:     "KasmVNC Client",
-
-		FMHome: "/home/kasm",
-
-		Socket: "",
-
+		Subfolder:     "/",
+		Title:         "KasmVNC Client",
+		FMHome:        "/home/remote-desktop",
+		Socket:        "",
 		MaxUploadSize: 200000000,
 	}
 
-	data, err := os.ReadFile(
-		"/home/kasm/.vnc/kclient.yaml",
-	)
+	data, err := os.ReadFile(cfg.FMHome + "/.vnc/kclient.yaml")
 
 	if err != nil {
 		return cfg

@@ -6,32 +6,30 @@ fi
 
 # 配置本地用户
 HOME_DIR="/home/${CURRENT_USER}"
-sudo mkdir "${HOME_DIR}"
-sudo chown -R 1000:1001 "${HOME_DIR}"
-sudo chmod 700 "${HOME_DIR}"
+sudo mkdir "${HOME_DIR}" "/home/remote-desktop"
+sudo chown -R 1000:1001 "${HOME_DIR}" "/home/remote-desktop"
+sudo chmod 700 "${HOME_DIR}" "/home/remote-desktop"
 
 # SSL 证书访问权限
 sudo adduser "${CURRENT_USER}" ssl-cert
-sudo apt update
-
-LOG_FILE="${TRIM_DATA_SHARE_PATHS%%:*}/info.log"
-log_msg() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
-}
 
 # 安装本地桌面
+sudo apt update
 if [ "${local_terms}" = "true" ]; then
     sudo apt install -y dbus-x11 cinnamon
 fi
 
+# 安装远程桌面
+case "${remote_type}" in
+    LXQT)
+        sudo apt install -y lxqt-core lightdm lightdm-gtk-greeter 
+        ;;
+    XFCE)
+        sudo apt install -y xfce4 xfce4-goodies
+        ;;
+esac
 
-
-
-
-
-log_msg "[INFO] sfdsfd...${local_terms}"
-
-log_msg "[INFO] sfdsfd...${remote_type}"
-
+# 启用 LightDM
+sudo systemctl start lightdm
 
 exit 0
