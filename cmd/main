@@ -7,12 +7,10 @@ start)
     ;;
 stop)
     systemctl stop kasm-client.service
-    systemctl stop kasmvnc.service
     exit 0
     ;;
-
 status)
-    if systemctl is-active --quiet kasmvnc.service; then
+    if systemctl is-active --quiet kasm-client.service; then
         exit 0
     else
         exit 3
