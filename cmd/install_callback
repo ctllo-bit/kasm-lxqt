@@ -54,9 +54,8 @@ Environment=XDG_RUNTIME_DIR=/run/user/1000/remote-desktop
 Environment=PULSE_RUNTIME_PATH=/run/user/1000/remote-desktop/pulse
 Environment=PULSE_STATE_PATH=${REMOTE_HOME}/.config/pulse
 
-ExecStartPre=/bin/mkdir -p /run/user/1000/remote-desktop/pulse
-ExecStartPre=/bin/chown 1000:Users /run/user/1000/remote-desktop/pulse
-
+RuntimeDirectory=/run/user/1000/remote-desktop/pulse
+RuntimeDirectoryMode=0750
 ExecStart=/usr/bin/pulseaudio --daemonize=no --exit-idle-time=-1
 
 Restart=always
@@ -97,9 +96,6 @@ CURRENT_USER=$(getent passwd 1000 | cut -d: -f1)
 if [ "$EUID" -eq 0 ]; then
     exec runuser -u "${CURRENT_USER}" -- "$0" "$@"
 fi
-
-# 为远程桌面单独创建 Runtime
-mkdir "/run/user/1000/remote-desktop"
 
 # 配置 Kasm 账号
 rm -f "${REMOTE_HOME}/.kasmpasswd"
