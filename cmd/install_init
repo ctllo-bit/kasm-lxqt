@@ -24,7 +24,6 @@ sudo loginctl enable-linger "${CURRENT_USER}"
 if [ "${local_terms}" = "true" ]; then
     sudo apt install -y lightdm
     sudo systemctl start lightdm
-    sudo -u ${CURRENT_USER} XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start pulseaudio.service
 fi
 
 exit 0

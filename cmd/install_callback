@@ -14,8 +14,6 @@ sudo tee "/etc/systemd/system/kasmvnc.service" > /dev/null <<EOF
 [Unit]
 Description=KasmVNC Server
 After=network.target
-# 关键：将此服务的生命周期绑定到 kasm-client
-PartOf=kasm-client.service
 
 [Service]
 Type=forking
@@ -39,10 +37,7 @@ log_msg "正在创建 kasm-pulseaudio 服务..."
 sudo tee "/etc/systemd/system/kasm-pulseaudio.service" > /dev/null <<EOF
 [Unit]
 Description=KasmVNC Remote PulseAudio
-
 Before=kasmvnc.service
-# 关键：将此服务的生命周期绑定到 kasm-client
-PartOf=kasm-client.service
 
 [Service]
 Type=simple
@@ -70,7 +65,6 @@ log_msg "正在创建 proxy 服务..."
 sudo tee "/etc/systemd/system/kasm-client.service" > /dev/null <<EOF
 [Unit]
 Description=kasm-client
-# 关键：启动 client 时同时要求启动 vnc 和 pulseaudio
 After=kasmvnc.service kasm-pulseaudio.service
 Requires=kasmvnc.service kasm-pulseaudio.service
 
@@ -148,7 +142,8 @@ desktop:
   resolution:
     width: 1920
     height: 1080
-  allow_resize: true
+  allow_resize: false
+  pixel_depth: 24
 
 network:
   protocol: http
@@ -169,7 +164,9 @@ server:
       - Cross-Origin-Opener-Policy=same-origin
     httpd_directory: /usr/share/kasmvnc/www
   advanced:
+    x_font_path: auto
     kasm_password_file: ${REMOTE_HOME}/.kasmpasswd
+    x_authority_file: ${REMOTE_HOME}/.Xauthority
 
 logging:
   log_writer_name: all
