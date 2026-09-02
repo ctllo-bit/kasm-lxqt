@@ -15,10 +15,16 @@ sudo adduser "${CURRENT_USER}" ssl-cert
 
 # 安装桌面
 sudo apt update
-sudo apt install -y dbus-x11 lxqt-core network-manager-gnome
+sudo apt install -y dbus-x11 lxqt-core network-manager
 
 # 当前用户开启 linger
 sudo loginctl enable-linger "${CURRENT_USER}"
+
+# 配置中文字体
+sudo apt install -y locales fonts-noto-cjk fonts-wqy-zenhei
+sudo sed -i '/^# zh_CN.UTF-8 UTF-8/s/^# //' /etc/locale.gen
+sudo locale-gen
+sudo update-locale LANG=zh_CN.UTF-8
 
 # 安装登录管理器
 if [ "${local_terms}" = "true" ]; then
