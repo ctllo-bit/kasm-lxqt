@@ -42,11 +42,15 @@ Group=1001
 
 Environment=HOME=${REMOTE_HOME}
 Environment=XDG_RUNTIME_DIR=/run/remote-desktop
+Environment=PULSE_RUNTIME_PATH=/run/remote-desktop/pulse
+Environment=PULSE_SERVER=unix:/run/remote-desktop/pulse/native
 Environment=DISPLAY=:1
 
 
 RuntimeDirectory=remote-desktop
-RuntimeDirectoryMode=0750
+RuntimeDirectoryMode=0700
+
+ExecStartPre=/usr/bin/pulseaudio --daemonize=yes --exit-idle-time=-1
 ExecStart=/usr/bin/kasmvncserver
 ExecStop=/usr/bin/kasmvncserver -kill
 
@@ -178,13 +182,11 @@ ssl:
 
 audio:
   device: "kasm_sink.monitor"
-  server: "/run/user/1000/remote-desktop/pulse/native"
+  server: "/run/remote-desktop/pulse/native"
 
 mic_socket: "/defaults/mic.sock"
 
 max_upload_size: 200000000
 EOF
-
-
 
 exit 0
