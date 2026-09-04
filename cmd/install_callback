@@ -46,11 +46,10 @@ Environment=PULSE_RUNTIME_PATH=/run/remote-desktop/pulse
 Environment=PULSE_SERVER=unix:/run/remote-desktop/pulse/native
 Environment=DISPLAY=:1
 
-
 RuntimeDirectory=remote-desktop
 RuntimeDirectoryMode=0700
 
-ExecStartPre=/usr/bin/pulseaudio --daemonize=yes --exit-idle-time=-1
+ExecStartPre=/usr/bin/pulseaudio --daemonize=yes --log-level=0 --exit-idle-time=-1
 ExecStart=/usr/bin/kasmvncserver
 ExecStop=/usr/bin/kasmvncserver -kill
 
@@ -64,13 +63,6 @@ EOF
 # 开机自启 Kasm 
 sudo systemctl daemon-reload
 sudo systemctl enable kasm-client.service
-
-
-
-
-
-
-
 
 # 切换用户
 CURRENT_USER=$(getent passwd 1000 | cut -d: -f1)
@@ -89,8 +81,6 @@ cat > "${REMOTE_HOME}/.vnc/xstartup" <<EOF
 #!/bin/sh
 unset SESSION_MANAGER
 unset DBUS_SESSION_BUS_ADDRESS
-
-export PULSE_SERVER=unix:/run/remote-desktop/pulse/native
 
 exec dbus-run-session -- startlxqt
 EOF
@@ -111,7 +101,7 @@ set-default-sink kasm_sink
 set-default-source virtmic
 EOF
 
-
+# 本地启动 PulseAudio 服务
 if [ "${local_terms}" = "true" ]; then
 XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start pulseaudio.service
 fi
@@ -133,7 +123,7 @@ desktop:
   resolution:
     width: 1920
     height: 1080
-  allow_resize: false
+  allow_resize: true
   pixel_depth: 24
 
 network:

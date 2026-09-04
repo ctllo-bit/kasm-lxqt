@@ -7,6 +7,7 @@ start)
     ;;
 stop)
     systemctl stop kasm-client.service
+    systemctl stop kasmvnc.service
     exit 0
     ;;
 status)

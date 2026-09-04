@@ -1,3 +1,27 @@
 #!/bin/bash
+LOG_FILE="${TRIM_DATA_SHARE_PATHS%%:*}/info.log"
+### This script is called after the user installs the application.
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
+}
+
+log_msg "开始卸载 KasmVNC..."
+
+sudo systemctl disable --now kasm-client.service 2>/dev/null
+sudo systemctl disable --now kasmvnc.service 2>/dev/null
+
+log_msg "移除 Systemd 服务文件..."
+sudo rm -f /etc/systemd/system/kasm-client.service
+sudo rm -f /etc/systemd/system/kasmvnc.service
+# 重新加载 systemd
+sudo systemctl daemon-reload
+# 清除这两个服务的历史 failed 状态
+sudo systemctl reset-failed kasm-client.service kasmvnc.service 2>/dev/null
+
+log_msg "卸载 KasmVNC 及配置..."
+sudo apt purge -y kasmvncserver
+sudo apt autoremove -y
+
+log_msg "KasmVNC 卸载完成。"
 
 exit 0
