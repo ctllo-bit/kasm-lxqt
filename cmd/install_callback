@@ -82,7 +82,7 @@ cat > "${REMOTE_HOME}/.vnc/xstartup" <<EOF
 unset SESSION_MANAGER
 unset DBUS_SESSION_BUS_ADDRESS
 
-exec dbus-run-session -- startlxqt
+exec dbus-run-session -- startxfce4
 EOF
 chmod +x "${REMOTE_HOME}/.vnc/xstartup"
 
