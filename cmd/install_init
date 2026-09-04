@@ -15,7 +15,7 @@ sudo adduser "${CURRENT_USER}" ssl-cert
 
 # 安装桌面
 sudo apt update
-sudo apt install -y dbus-x11 xfce4 xfce4-goodies
+sudo apt install -y dbus-x11 libglib2.0-bin xfce4 xfce4-goodies
 
 # 当前用户开启 linger
 sudo loginctl enable-linger "${CURRENT_USER}"
