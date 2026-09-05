@@ -50,7 +50,6 @@ type audioConn struct {
 	cmdMu     sync.Mutex
 	cmd       *exec.Cmd
 	stop      chan struct{}
-	stopOnce  sync.Once
 	micErrLog sync.Once
 }
 
@@ -104,11 +103,11 @@ func (a *audioConn) startRecorder() {
 	}
 
 	a.cmdMu.Lock()
+	// 已经有 recorder 在运行，不重复启动
 	if a.cmd != nil {
 		a.cmdMu.Unlock()
 		return
 	}
-	a.cmdMu.Unlock()
 
 	cmd := exec.Command("parec",
 		"--device="+a.hub.device,
@@ -118,22 +117,28 @@ func (a *audioConn) startRecorder() {
 	)
 	cmd.Env = os.Environ()
 	if a.hub.server != "" {
-		cmd.Env = append(cmd.Env, "PULSE_SERVER="+pulseServerEnv(a.hub.server))
+		cmd.Env = append(cmd.Env,
+			"PULSE_SERVER="+pulseServerEnv(a.hub.server),
+		)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		a.cmdMu.Unlock()
 		log.Printf("audio: create stdout pipe: %v", err)
 		return
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
+		a.cmdMu.Unlock()
 		log.Printf("audio: start parec: %v", err)
 		return
 	}
 
-	a.cmdMu.Lock()
+	// 每次 open 都创建一个全新的 stop channel
+	stop := make(chan struct{})
 	a.cmd = cmd
+	a.stop = stop
 	a.cmdMu.Unlock()
 
 	go func() {
@@ -142,6 +147,7 @@ func (a *audioConn) startRecorder() {
 			a.cmdMu.Lock()
 			if a.cmd == cmd {
 				a.cmd = nil
+				a.stop = nil
 			}
 			a.cmdMu.Unlock()
 			if stderr.Len() > 0 {
@@ -159,7 +165,7 @@ func (a *audioConn) startRecorder() {
 				return
 			}
 			select {
-			case <-a.stop:
+			case <-stop:
 				if cmd.Process != nil {
 					_ = cmd.Process.Kill()
 				}
@@ -171,13 +177,15 @@ func (a *audioConn) startRecorder() {
 }
 
 func (a *audioConn) stopRecorder() {
-	a.stopOnce.Do(func() {
-		close(a.stop)
-	})
 	a.cmdMu.Lock()
 	cmd := a.cmd
+	stop := a.stop
 	a.cmd = nil
+	a.stop = nil
 	a.cmdMu.Unlock()
+	if stop != nil {
+		close(stop)
+	}
 	if cmd != nil && cmd.Process != nil {
 		_ = cmd.Process.Kill()
 	}
