@@ -26,10 +26,7 @@ sudo sed -i 's/^# *zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen
 sudo locale-gen
 sudo update-locale LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:zh LC_ALL=zh_CN.UTF-8
 
-# 安装登录管理器
-if [ "${local_terms}" = "true" ]; then
-    sudo apt install -y lightdm
-    sudo systemctl start lightdm
-fi
+# 启用 LightDM
+sudo systemctl start lightdm
 
 exit 0

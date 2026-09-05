@@ -62,22 +62,6 @@
                         "message": "密码不能包含空格"
                     }
                 ]
-            },
-            {
-                "type": "radio",
-                "field": "local_terms",
-                "label": "LightDM 桌面管理器",
-                "initValue": "false",
-                "options": [
-                    {
-                        "label": "启用",
-                        "value": "true"
-                    },
-                    {
-                        "label": "关闭",
-                        "value": "false"
-                    }
-                ]
             }
         ]
     }

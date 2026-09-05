@@ -1,7 +1,7 @@
 appname               = kasm-lxqt
 version               = 1.0.0
 display_name          = Webtop
-desc                  = `<div>基于<span><a href="https://lxqt-project.org/">XFCE</a></span>桌面环境与<span><a href="https://github.com/canonical/lightdm">LightDM</a></span>显示管理器构建的轻量级桌面应用，支持本地桌面与远程桌面双模式运行。<span>
+desc                  = `<div>基于<span><a href="https://xfce.org/">XFCE</a></span>桌面环境与<span><a href="https://github.com/canonical/lightdm">LightDM</a></span>显示管理器构建的轻量级桌面应用，支持本地桌面与远程桌面双模式运行。<span>
 
 远程桌面基于 KasmVNC 与 kclient 增强层实现，提供独立普通用户环境，kasm 用户没有 root 权限。
 远程桌面与本地桌面声音系统相互独立，可同时运行且互不影响。

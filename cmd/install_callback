@@ -102,10 +102,7 @@ set-default-source virtmic
 EOF
 
 # 本地启动 PulseAudio 服务
-if [ "${local_terms}" = "true" ]; then
-XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start pulseaudio.service
-fi
-
+XDG_RUNTIME_DIR=/run/user/1000 systemctl --user enable --now pulseaudio.service 2>/dev/null
 # SSL cert
 rm -f "${REMOTE_HOME}/.vnc/self.key" "${REMOTE_HOME}/.vnc/self.pem"
 openssl req -x509 \
