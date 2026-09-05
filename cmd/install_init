@@ -21,10 +21,13 @@ sudo apt install -y dbus-x11 libglib2.0-bin xfce4 xfce4-goodies
 sudo loginctl enable-linger "${CURRENT_USER}"
 
 # 配置中文字体
-sudo apt install -y locales fonts-noto-cjk fonts-wqy-zenhei
+sudo apt install -y locales fonts-wqy-zenhei fonts-wqy-microhei
 sudo sed -i 's/^# *zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen
 sudo locale-gen
 sudo update-locale LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:zh LC_ALL=zh_CN.UTF-8
+
+# 安装浏览器
+sudo apt install -y chromium chromium-l10n
 
 # 启用 LightDM
 sudo systemctl start lightdm
