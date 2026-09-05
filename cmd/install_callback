@@ -92,7 +92,8 @@ touch "${REMOTE_HOME}/.vnc/.de-was-selected"
 # 配置 PulseAudio
 mkdir -p "${REMOTE_HOME}/.config/pulse"
 cat > "${REMOTE_HOME}/.config/pulse/default.pa" <<'EOF'
-.include /etc/pulse/default.pa
+load-module module-always-sink
+load-module module-native-protocol-unix
 
 load-module module-null-sink sink_name=kasm_sink sink_properties=device.description=KasmAudio
 load-module module-remap-source source_name=virtmic master=kasm_sink.monitor
@@ -102,7 +103,7 @@ set-default-source virtmic
 EOF
 
 # 本地启动 PulseAudio 服务
-XDG_RUNTIME_DIR=/run/user/1000 systemctl --user enable --now pulseaudio.service 2>/dev/null
+XDG_RUNTIME_DIR=/run/user/1000 systemctl --user enable --now pulseaudio.service
 # SSL cert
 rm -f "${REMOTE_HOME}/.vnc/self.key" "${REMOTE_HOME}/.vnc/self.pem"
 openssl req -x509 \
