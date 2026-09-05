@@ -1,7 +1,7 @@
 {
     ".url": {
         "kasm-lxqt.Application": {
-            "title": "LXQT",
+            "title": "Webtop",
             "icon": "images/icon_{0}.png",
             "type": "url",
             "protocol": "https",

@@ -110,30 +110,147 @@ function toggle(id) {
   $(id).slideToggle(300);
 }
 
-// Fullscreen handler
-function fullscreen() {
-  if (document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement || document.msFullscreenElement) {
-    if (document.exitFullscreen) {
-      document.exitFullscreen();
-    } else if (document.mozCancelFullScreen) {
-      document.mozCancelFullScreen();
-    } else if (document.webkitExitFullscreen) {
-      document.webkitExitFullscreen();
-    } else if (document.msExitFullscreen) {
-      document.msExitFullscreen();
+//// Fullscreen + KasmVNC Resolution ////
+
+var fullscreenResolutionActive = false;
+
+function getVncFrame() {
+  return document.querySelector('iframe.vnc');
+}
+
+function sendVncMessage(message) {
+  var frame = getVncFrame();
+
+  if (!frame || !frame.contentWindow) {
+    console.warn('KasmVNC iframe not found');
+    return false;
+  }
+
+  console.log('KasmVNC message:', message);
+
+  frame.contentWindow.postMessage(message, '*');
+
+  return true;
+}
+
+function setFullscreenResolution() {
+
+  // 原始模式是 remote。
+  // 进入全屏后必须先切到 scale，
+  // 否则 KasmVNC 会清除 forcedResolutionX/Y。
+  sendVncMessage({
+    action: 'resize',
+    value: 'scale'
+  });
+
+  // 使用 KasmVNC 自己的 set_resolution
+  sendVncMessage({
+    action: 'set_resolution',
+    value_x: 1920,
+    value_y: 1080
+  });
+}
+
+function restoreFullscreenResolution() {
+
+  if (!fullscreenResolutionActive) {
+    return;
+  }
+
+  // 恢复原来的 Remote Resizing
+  sendVncMessage({
+    action: 'resize',
+    value: 'remote'
+  });
+
+  fullscreenResolutionActive = false;
+
+  console.log('KasmVNC resize restored: remote');
+}
+
+async function fullscreen() {
+
+  var isFullscreen =
+    document.fullscreenElement ||
+    document.mozFullScreenElement ||
+    document.webkitFullscreenElement ||
+    document.msFullscreenElement;
+
+  if (isFullscreen) {
+
+    // 退出浏览器 Fullscreen
+    try {
+
+      if (document.exitFullscreen) {
+        await document.exitFullscreen();
+
+      } else if (document.mozCancelFullScreen) {
+        document.mozCancelFullScreen();
+
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+
+      } else if (document.msExitFullscreen) {
+        document.msExitFullscreen();
+      }
+
+    } catch (e) {
+      console.error('Exit fullscreen failed:', e);
     }
+
   } else {
-    if (document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen();
-    } else if (document.documentElement.mozRequestFullScreen) {
-      document.documentElement.mozRequestFullScreen();
-    } else if (document.documentElement.webkitRequestFullscreen) {
-      document.documentElement.webkitRequestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
-    } else if (document.body.msRequestFullscreen) {
-      document.body.msRequestFullscreen();
+
+    // 进入全屏前，设置 KasmVNC 1920x1080
+    setFullscreenResolution();
+
+    fullscreenResolutionActive = true;
+
+    // 浏览器 Fullscreen
+    try {
+
+      if (document.documentElement.requestFullscreen) {
+
+        await document.documentElement.requestFullscreen();
+
+      } else if (document.documentElement.mozRequestFullScreen) {
+
+        document.documentElement.mozRequestFullScreen();
+
+      } else if (document.documentElement.webkitRequestFullscreen) {
+
+        document.documentElement.webkitRequestFullscreen(
+          Element.ALLOW_KEYBOARD_INPUT
+        );
+
+      } else if (document.body.msRequestFullscreen) {
+
+        document.body.msRequestFullscreen();
+
+      }
+
+    } catch (e) {
+
+      console.error('Enter fullscreen failed:', e);
+
+      // 如果进入 Fullscreen 失败，立即恢复原 resize
+      restoreFullscreenResolution();
     }
   }
 }
+
+// 点击退出 / ESC / 浏览器退出 Fullscreen
+document.addEventListener('fullscreenchange', function () {
+
+  var isFullscreen =
+    document.fullscreenElement ||
+    document.mozFullScreenElement ||
+    document.webkitFullscreenElement ||
+    document.msFullscreenElement;
+
+  if (!isFullscreen) {
+    restoreFullscreenResolution();
+  }
+});
 
 //// WebSocket comms for audio ////
 var host = window.location.hostname;
