@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -15,24 +14,13 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const (
-	audioChunkSize       = 4096
-	audioBroadcastBuffer = 64
-	audioClientBuffer    = 8
-)
+const audioChunkSize = 4096
 
 type audioHub struct {
 	device       string
 	server       string
 	micSocket    string
 	audioEnabled bool
-
-	mu        sync.RWMutex
-	clients   map[*audioClient]struct{}
-	broadcast chan []byte
-
-	sourceMu sync.Mutex
-	source   *audioSource
 }
 
 func newAudioHub(device, server, micSocket string) *audioHub {
@@ -47,36 +35,23 @@ func newAudioHub(device, server, micSocket string) *audioHub {
 	if server != "" {
 		log.Printf("kclient audio using pulse server %s", server)
 	}
-	h := &audioHub{
+	return &audioHub{
 		device:       device,
 		server:       server,
 		micSocket:    micSocket,
 		audioEnabled: enabled,
-		clients:      make(map[*audioClient]struct{}),
-		broadcast:    make(chan []byte, audioBroadcastBuffer),
 	}
-	go h.fanout()
-	return h
 }
 
-type audioClient struct {
+type audioConn struct {
 	hub       *audioHub
 	conn      *websocket.Conn
-	send      chan []byte
+	writeMu   sync.Mutex
+	cmdMu     sync.Mutex
+	cmd       *exec.Cmd
 	stop      chan struct{}
-	closeOnce sync.Once
-	opened    bool
+	stopOnce  sync.Once
 	micErrLog sync.Once
-}
-
-type audioSource struct {
-	hub      *audioHub
-	cmd      *exec.Cmd
-	stdout   io.ReadCloser
-	stderr   bytes.Buffer
-	stopCh   chan struct{}
-	stopOnce sync.Once
-	done     chan struct{}
 }
 
 type audioCommand struct {
@@ -91,17 +66,8 @@ func (h *audioHub) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	c := &audioClient{
-		hub:  h,
-		conn: conn,
-		send: make(chan []byte, audioClientBuffer),
-		stop: make(chan struct{}),
-	}
-	defer func() {
-		h.unsubscribe(c)
-		c.shutdown()
-	}()
-	go c.writeLoop()
+	a := &audioConn{hub: h, conn: conn, stop: make(chan struct{})}
+	defer a.stopRecorder()
 
 	for {
 		messageType, data, err := conn.ReadMessage()
@@ -111,7 +77,7 @@ func (h *audioHub) handleWS(w http.ResponseWriter, r *http.Request) {
 
 		if messageType == websocket.BinaryMessage {
 			if err := os.WriteFile(h.micSocket, data, 0o644); err != nil {
-				c.micErrLog.Do(func() {
+				a.micErrLog.Do(func() {
 					log.Printf("write mic data to %s: %v", h.micSocket, err)
 				})
 			}
@@ -125,205 +91,103 @@ func (h *audioHub) handleWS(w http.ResponseWriter, r *http.Request) {
 		}
 		switch cmd.Type {
 		case "open":
-			c.enableAudio()
+			a.startRecorder()
 		case "close":
-			c.disableAudio()
+			a.stopRecorder()
 		}
 	}
 }
 
-func (c *audioClient) enableAudio() {
-	if !c.hub.audioEnabled || c.opened {
+func (a *audioConn) startRecorder() {
+	if !a.hub.audioEnabled {
 		return
 	}
-	c.opened = true
-	c.hub.subscribe(c)
-	c.hub.startSource()
-}
 
-func (c *audioClient) disableAudio() {
-	if !c.opened {
+	a.cmdMu.Lock()
+	if a.cmd != nil {
+		a.cmdMu.Unlock()
 		return
 	}
-	c.opened = false
-	c.hub.unsubscribe(c)
-}
+	a.cmdMu.Unlock()
 
-func (c *audioClient) writeLoop() {
-	for {
-		select {
-		case data := <-c.send:
-			if err := c.conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
-				log.Printf("audio write binary: %v", err)
-				c.hub.unsubscribe(c)
-				c.shutdown()
-				return
-			}
-		case <-c.stop:
-			return
-		}
-	}
-}
-
-func (c *audioClient) shutdown() {
-	c.closeOnce.Do(func() {
-		close(c.stop)
-		_ = c.conn.Close()
-	})
-}
-
-func (h *audioHub) subscribe(c *audioClient) {
-	h.mu.Lock()
-	h.clients[c] = struct{}{}
-	h.mu.Unlock()
-}
-
-func (h *audioHub) unsubscribe(c *audioClient) {
-	h.mu.Lock()
-	if _, ok := h.clients[c]; !ok {
-		h.mu.Unlock()
-		return
-	}
-	delete(h.clients, c)
-	stopSource := len(h.clients) == 0
-	h.mu.Unlock()
-
-	if stopSource {
-		h.stopSource()
-	}
-}
-
-func (h *audioHub) startSource() {
-	if !h.audioEnabled {
-		return
-	}
-	h.sourceMu.Lock()
-	defer h.sourceMu.Unlock()
-	if h.source != nil {
-		return
-	}
-	src, err := h.newAudioSource()
-	if err != nil {
-		log.Printf("audio: start parec: %v", err)
-		return
-	}
-	h.source = src
-	go src.run()
-}
-
-func (h *audioHub) stopSource() {
-	h.sourceMu.Lock()
-	src := h.source
-	h.source = nil
-	h.sourceMu.Unlock()
-	if src != nil {
-		src.stop()
-	}
-}
-
-func (h *audioHub) sourceFinished(src *audioSource) {
-	h.sourceMu.Lock()
-	if h.source == src {
-		h.source = nil
-	}
-	h.sourceMu.Unlock()
-}
-
-func (h *audioHub) newAudioSource() (*audioSource, error) {
 	cmd := exec.Command("parec",
-		"--device="+h.device,
+		"--device="+a.hub.device,
 		"--format=s16le",
 		"--rate=44100",
 		"--channels=2",
 	)
 	cmd.Env = os.Environ()
-	if h.server != "" {
-		cmd.Env = append(cmd.Env, "PULSE_SERVER="+pulseServerEnv(h.server))
+	if a.hub.server != "" {
+		cmd.Env = append(cmd.Env, "PULSE_SERVER="+pulseServerEnv(a.hub.server))
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		log.Printf("audio: create stdout pipe: %v", err)
+		return
 	}
-	src := &audioSource{
-		hub:    h,
-		cmd:    cmd,
-		stdout: stdout,
-		stopCh: make(chan struct{}),
-		done:   make(chan struct{}),
-	}
-	cmd.Stderr = &src.stderr
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		log.Printf("audio: start parec: %v", err)
+		return
 	}
-	return src, nil
-}
 
-func (s *audioSource) run() {
-	defer func() {
-		if s.cmd != nil {
-			_ = s.cmd.Wait()
-		}
-		if s.stderr.Len() > 0 {
-			log.Printf("audio: parec stderr: %s", s.stderr.String())
-		}
-		s.hub.sourceFinished(s)
-		close(s.done)
-	}()
+	a.cmdMu.Lock()
+	a.cmd = cmd
+	a.cmdMu.Unlock()
 
-	buf := make([]byte, audioChunkSize)
-	for {
-		select {
-		case <-s.stopCh:
-			return
-		default:
-		}
+	go func() {
+		defer func() {
+			_ = cmd.Wait()
+			a.cmdMu.Lock()
+			if a.cmd == cmd {
+				a.cmd = nil
+			}
+			a.cmdMu.Unlock()
+			if stderr.Len() > 0 {
+				log.Printf("audio: parec stderr: %s", stderr.String())
+			}
+		}()
 
-		n, err := s.stdout.Read(buf)
-		if n > 0 && !allZero(buf[:n]) {
-			chunk := make([]byte, n)
-			copy(chunk, buf[:n])
-			select {
-			case s.hub.broadcast <- chunk:
-			case <-s.stopCh:
+		buf := make([]byte, audioChunkSize)
+		for {
+			n, readErr := stdout.Read(buf)
+			if n > 0 && !allZero(buf[:n]) {
+				a.writeBinary(buf[:n])
+			}
+			if readErr != nil {
 				return
 			}
-		}
-		if err != nil {
-			if err != io.EOF {
-				log.Printf("audio: read parec: %v", err)
+			select {
+			case <-a.stop:
+				if cmd.Process != nil {
+					_ = cmd.Process.Kill()
+				}
+				return
+			default:
 			}
-			return
 		}
-	}
+	}()
 }
 
-func (s *audioSource) stop() {
-	s.stopOnce.Do(func() {
-		close(s.stopCh)
-		if s.cmd != nil && s.cmd.Process != nil {
-			_ = s.cmd.Process.Kill()
-		}
+func (a *audioConn) stopRecorder() {
+	a.stopOnce.Do(func() {
+		close(a.stop)
 	})
-	<-s.done
-}
-
-func (h *audioHub) fanout() {
-	for chunk := range h.broadcast {
-		h.broadcastChunk(chunk)
+	a.cmdMu.Lock()
+	cmd := a.cmd
+	a.cmd = nil
+	a.cmdMu.Unlock()
+	if cmd != nil && cmd.Process != nil {
+		_ = cmd.Process.Kill()
 	}
 }
 
-func (h *audioHub) broadcastChunk(chunk []byte) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	for c := range h.clients {
-		select {
-		case c.send <- chunk:
-		case <-c.stop:
-		default:
-			// Drop the oldest-arriving chunk for a slow client instead of
-			// blocking the shared capture goroutine.
-		}
+func (a *audioConn) writeBinary(data []byte) {
+	a.writeMu.Lock()
+	defer a.writeMu.Unlock()
+	if err := a.conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+		log.Printf("audio write binary: %v", err)
 	}
 }
 
