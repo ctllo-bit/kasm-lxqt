@@ -11,8 +11,8 @@ build:
 	@rm -f Kasmlqxt-*.fpk
 
 	@echo "==> golang编译 linux-$(ARCH)..."
-	@cd app/kclient && \
-	$(GO_ENV) go build -o ../server/kclient .
+	@cd app/server && \
+	$(GO_ENV) go build ./
 
 	@echo "==> 正在打包 fpk..."
 	@fnpack build
