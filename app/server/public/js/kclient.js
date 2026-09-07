@@ -3,9 +3,8 @@ var eventMethod = window.addEventListener ? "addEventListener" : "attachEvent";
 var eventer = window[eventMethod];
 var messageEvent = eventMethod == "attachEvent" ? "onmessage" : "message";
 eventer(messageEvent,function(e) {
-  var data = e.data || event.data;
-  if (data && data.action) {
-    switch (data.action) {
+  if (event.data && event.data.action) {
+    switch (event.data.action) {
       case 'control_open':
         openToggle('#lsbar');
         break;
@@ -52,32 +51,26 @@ PCM.prototype.init = function() {
 PCM.prototype.feed = function(data) {
   lock = true;
   // Convert bytes to typed array then float32 array
-  let sampleCount = Math.floor(data.byteLength / 2);
-  if (sampleCount === 0) return;
-  let i16Array = new Int16Array(data, 0, sampleCount);
+  let i16Array = new Int16Array(data, 0, data.length);
   let f32Array = Float32Array.from(i16Array, x => x / 32767);
-  let combined = new Float32Array(buffer.length + f32Array.length);
-  combined.set(buffer, 0);
-  combined.set(f32Array, buffer.length);
-  buffer = combined;
-
-  // Only schedule complete stereo frames and keep the remainder buffered
-  let usable = buffer.length - (buffer.length % 2);
-  if (usable === 0) return;
-  let buffAudio = this.audioCtx.createBuffer(2, usable / 2, 44100);
-  let duration = buffAudio.duration;
+  buffer = new Float32Array([...buffer, ...f32Array]);
+  let buffAudio = this.audioCtx.createBuffer(2, buffer.length, 44100);
+  let duration = buffAudio.duration / 2;
   if ((duration > .05) || (playing)) {
     playing = true;
     let buffSource = this.audioCtx.createBufferSource();
+    let arrLength = buffer.length / 2;
     let left = buffAudio.getChannelData(0);
     let right = buffAudio.getChannelData(1);
-    let count = 0;
-    for (let offset = 0; offset < usable; offset += 2) {
-      left[count] = buffer[offset];
-      right[count] = buffer[offset + 1];
-      count++;
+    let byteCount = 0;
+    let offset = 1;
+    for (let count = 0; count < arrLength; count++) {
+      left[count] = buffer[byteCount];
+      byteCount += 2;
+      right[count] = buffer[offset];
+      offset += 2;
     }
-    buffer = buffer.slice(usable);
+    buffer = [];
     if (this.startTime < this.audioCtx.currentTime) {
       this.startTime = this.audioCtx.currentTime;
     }
@@ -110,198 +103,48 @@ function toggle(id) {
   $(id).slideToggle(300);
 }
 
-//// Fullscreen + KasmVNC Resolution ////
-
-var fullscreenResolutionActive = false;
-
-function getVncFrame() {
-  return document.querySelector('iframe.vnc');
-}
-
-function sendVncMessage(message) {
-  var frame = getVncFrame();
-
-  if (!frame || !frame.contentWindow) {
-    console.warn('KasmVNC iframe not found');
-    return false;
-  }
-
-  console.log('KasmVNC message:', message);
-
-  frame.contentWindow.postMessage(message, '*');
-
-  return true;
-}
-
-function setFullscreenResolution() {
-
-  // 原始模式是 remote。
-  // 进入全屏后必须先切到 scale，
-  // 否则 KasmVNC 会清除 forcedResolutionX/Y。
-  sendVncMessage({
-    action: 'resize',
-    value: 'scale'
-  });
-
-  // 使用 KasmVNC 自己的 set_resolution
-  sendVncMessage({
-    action: 'set_resolution',
-    value_x: 1920,
-    value_y: 1080
-  });
-}
-
-function restoreFullscreenResolution() {
-
-  if (!fullscreenResolutionActive) {
-    return;
-  }
-
-  // 恢复原来的 Remote Resizing
-  sendVncMessage({
-    action: 'resize',
-    value: 'remote'
-  });
-
-  fullscreenResolutionActive = false;
-
-  console.log('KasmVNC resize restored: remote');
-}
-
-async function fullscreen() {
-
-  var isFullscreen =
-    document.fullscreenElement ||
-    document.mozFullScreenElement ||
-    document.webkitFullscreenElement ||
-    document.msFullscreenElement;
-
-  if (isFullscreen) {
-
-    // 退出浏览器 Fullscreen
-    try {
-
-      if (document.exitFullscreen) {
-        await document.exitFullscreen();
-
-      } else if (document.mozCancelFullScreen) {
-        document.mozCancelFullScreen();
-
-      } else if (document.webkitExitFullscreen) {
-        document.webkitExitFullscreen();
-
-      } else if (document.msExitFullscreen) {
-        document.msExitFullscreen();
-      }
-
-    } catch (e) {
-      console.error('Exit fullscreen failed:', e);
+// Fullscreen handler
+function fullscreen() {
+  if (document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement || document.msFullscreenElement) {
+    if (document.exitFullscreen) {
+      document.exitFullscreen();
+    } else if (document.mozCancelFullScreen) {
+      document.mozCancelFullScreen();
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    } else if (document.msExitFullscreen) {
+      document.msExitFullscreen();
     }
-
   } else {
-
-    // 进入全屏前，设置 KasmVNC 1920x1080
-    setFullscreenResolution();
-
-    fullscreenResolutionActive = true;
-
-    // 浏览器 Fullscreen
-    try {
-
-      if (document.documentElement.requestFullscreen) {
-
-        await document.documentElement.requestFullscreen();
-
-      } else if (document.documentElement.mozRequestFullScreen) {
-
-        document.documentElement.mozRequestFullScreen();
-
-      } else if (document.documentElement.webkitRequestFullscreen) {
-
-        document.documentElement.webkitRequestFullscreen(
-          Element.ALLOW_KEYBOARD_INPUT
-        );
-
-      } else if (document.body.msRequestFullscreen) {
-
-        document.body.msRequestFullscreen();
-
-      }
-
-    } catch (e) {
-
-      console.error('Enter fullscreen failed:', e);
-
-      // 如果进入 Fullscreen 失败，立即恢复原 resize
-      restoreFullscreenResolution();
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen();
+    } else if (document.documentElement.mozRequestFullScreen) {
+      document.documentElement.mozRequestFullScreen();
+    } else if (document.documentElement.webkitRequestFullscreen) {
+      document.documentElement.webkitRequestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
+    } else if (document.body.msRequestFullscreen) {
+      document.body.msRequestFullscreen();
     }
   }
 }
 
-// 点击退出 / ESC / 浏览器退出 Fullscreen
-document.addEventListener('fullscreenchange', function () {
-
-  var isFullscreen =
-    document.fullscreenElement ||
-    document.mozFullScreenElement ||
-    document.webkitFullscreenElement ||
-    document.msFullscreenElement;
-
-  if (!isFullscreen) {
-    restoreFullscreenResolution();
-  }
-});
-
-//// WebSocket comms for audio ////
-var host = window.location.hostname;
-var port = window.location.port;
-var protocol = window.location.protocol;
-var path = window.location.pathname.replace(/\/+$/, '');
-var wsProtocol = protocol === 'https:' ? 'wss://' : 'ws://';
-var socket = null;
-var socketConnected = false;
-var audioOpen = false;
+// Native WebSocket comms for audio. The Go server sends raw PCM frames as binary messages.
+var socketProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+var socket = new WebSocket(socketProtocol + '//' + window.location.host + window.location.pathname + 'audio/ws');
+socket.binaryType = 'arraybuffer';
 var player = {};
 var micEnabled = false;
 var micWorkletNode; // To store the AudioWorkletNode
 var audio_context;
 
-function connectAudioSocket() {
-  socket = new WebSocket(wsProtocol + host + ':' + port + (path ? path + '/' : '/') + 'audio/ws');
-  socket.binaryType = 'arraybuffer';
-  socket.onopen = function() {
-    socketConnected = true;
-    if (audioOpen) {
-      socket.send(JSON.stringify({type: 'open'}));
-    }
-  };
-  socket.onmessage = function(event) {
-    if (typeof event.data === 'string') return;
-    if (('audioCtx' in player) && (player.audioCtx)) {
-      processAudio(event.data);
-    }
-  };
-  socket.onclose = function() {
-    socketConnected = false;
-    setTimeout(connectAudioSocket, 3000);
-  };
-}
-connectAudioSocket();
-
 function audio() {
   if (('audioCtx' in player) && (player.audioCtx)) {
     player.destroy();
-    audioOpen = false;
-    if (socketConnected) {
-      socket.send(JSON.stringify({type: 'close'}));
-    }
+    sendAudioControl('close');
     $('#audioButton').removeClass("icons-selected");
     return;
   }
-  audioOpen = true;
-  if (socketConnected) {
-    socket.send(JSON.stringify({type: 'open'}));
-  }
+  sendAudioControl('open');
   player = new PCM();
   $('#audioButton').addClass("icons-selected");
 }
@@ -309,6 +152,23 @@ function audio() {
 function processAudio(data) {
   player.feed(data);
 }
+
+function sendAudioControl(type) {
+  if (socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: type }));
+  }
+}
+
+socket.addEventListener('message', function(event) {
+  if (event.data instanceof ArrayBuffer) {
+    processAudio(event.data);
+    return;
+  }
+  try {
+    var message = JSON.parse(event.data);
+    if (message.type === 'error') console.error('audio error:', message.error);
+  } catch (_) {}
+});
 
 // Define the AudioWorkletProcessor as a string.
 const micWorkletProcessorCode = `
@@ -356,7 +216,7 @@ async function mic() {
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-    audio_context = new window.AudioContext({sampleRate: 44100});
+    audio_context = new window.AudioContext();
 
     // Create a URL for the AudioWorkletProcessor code
     const micWorkletProcessorBlob = new Blob([micWorkletProcessorCode], { type: 'text/javascript' });
@@ -367,7 +227,7 @@ async function mic() {
     micWorkletNode = new AudioWorkletNode(audio_context, 'mic-worklet-processor');
 
     micWorkletNode.port.onmessage = (event) => {
-      if (socketConnected && socket.readyState === WebSocket.OPEN) {
+      if (socket.readyState === WebSocket.OPEN) {
         socket.send(event.data.buffer);
       }
     };
