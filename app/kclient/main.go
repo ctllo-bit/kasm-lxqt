@@ -23,7 +23,7 @@ func main() {
 	}
 
 	// 创建 HTTP Handler
-	handler := router.NewHandler(cfg.Subfolder, cfg.VNC.ProxyTarget, vncAuth)
+	handler := router.NewHandler(cfg, vncAuth)
 
 	// 配置未启动的 HTTP Server，设置 ReadHeaderTimeout 和 IdleTimeout
 	server := &http.Server{

@@ -23,62 +23,44 @@ type pageData struct {
 	VNCPath string
 }
 
-var baseDir = "/var/apps/kasm-lxqt/target/kclient"
+// // New 组装所有路由，返回最终 handler（含认证中间件）。
+// func NewHandlerf(cfg config.Config, a *auth.Authenticator, vncProxy http.Handler) (http.Handler, error) {
 
-// New 组装所有路由，返回最终 handler（含认证中间件）。
-func NewHandlerf(cfg config.Config, a *auth.Authenticator, vncProxy http.Handler) (http.Handler, error) {
-	publicDir := filepath.Join(baseDir, "public")
+// 	log.Printf("publicDir=%s", publicDir)
 
-	log.Printf("publicDir=%s", publicDir)
+// 	// 启动时解析一次
+// 	tmpl, err := template.ParseFiles(filepath.Join(publicDir, "index.html"))
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	// 启动时解析一次
-	tmpl, err := template.ParseFiles(filepath.Join(publicDir, "index.html"))
-	if err != nil {
-		return nil, err
-	}
+// 	mux := http.NewServeMux()
 
-	mux := http.NewServeMux()
+// 	// KasmVNC 页面和静态资源
+// 	mux.Handle("/vnc/", http.StripPrefix("/vnc/", vncProxy))
 
-	// KasmVNC 页面和静态资源
-	mux.Handle("/vnc/", http.StripPrefix("/vnc/", vncProxy))
+// 	// 首页 + 兜底代理：非 "/" 的请求全部透传给 KasmVNC，这样 /assets/*、/app/*、/websockify 都能到达上游
+// 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+// 		if r.URL.Path == "/" {
+// 			renderIndex(w, tmpl, cfg) // 传入已解析的模板
+// 			return
+// 		}
+// 		vncProxy.ServeHTTP(w, r)
+// 	})
 
-	// 首页 + 兜底代理：非 "/" 的请求全部透传给 KasmVNC，这样 /assets/*、/app/*、/websockify 都能到达上游
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			renderIndex(w, tmpl, cfg) // 传入已解析的模板
-			return
-		}
-		vncProxy.ServeHTTP(w, r)
-	})
+// 	// Audio WebRTC
+// 	mux.HandleFunc("POST /audio/offer", audio.HandleOffer)
 
-	// Audio WebRTC
-	mux.HandleFunc("POST /audio/offer", audio.HandleOffer)
+// 	// 本地静态资源
+// 	mux.Handle("/public/", http.StripPrefix("/public/", http.FileServer(http.Dir(publicDir))))
 
-	// 本地静态资源
-	mux.Handle("/public/", http.StripPrefix("/public/", http.FileServer(http.Dir(publicDir))))
+// 	// manifest / favicon
+// 	mux.HandleFunc("/manifest.json", staticFile(filepath.Join(publicDir, "manifest.json"), "application/manifest+json"))
+// 	mux.HandleFunc("/favicon.ico", staticFile(filepath.Join(publicDir, "favicon.ico"), "image/x-icon"))
 
-	// manifest / favicon
-	mux.HandleFunc("/manifest.json", staticFile(filepath.Join(publicDir, "manifest.json"), "application/manifest+json"))
-	mux.HandleFunc("/favicon.ico", staticFile(filepath.Join(publicDir, "favicon.ico"), "image/x-icon"))
-
-	// 认证包在最外层
-	return a.Middleware(mux), nil
-}
-
-// 先在内存里把模板渲染成完整 HTML，成功才发给浏览器，失败返回 500
-func renderIndex(w http.ResponseWriter, tmpl *template.Template, cfg config.Config) {
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, pageData{
-		Title:   cfg.Title,
-		VNCPath: cfg.VNCPath(),
-	}); err != nil {
-		log.Printf("render index: %v", err)
-		http.Error(w, "render failed", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(buf.Bytes())
-}
+// 	// 认证包在最外层
+// 	return a.Middleware(mux), nil
+// }
 
 func staticFile(path, contentType string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -90,10 +72,13 @@ func staticFile(path, contentType string) http.HandlerFunc {
 
 const kclientDir = "/var/apps/kasm-lxqt/target/kclient"
 
-func NewHandler(subfolder string, proxyTarget string, auth *auth.Authenticator) http.Handler {
+func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
+	// 静态资源目录
+	publicDir := filepath.Join(kclientDir, "public")
+
 	// 加载 index.html 模板
 	indexTmpl := template.Must(
-		template.ParseFiles(filepath.Join(kclientDir, "public", "index.html")),
+		template.ParseFiles(filepath.Join(publicDir, "index.html")),
 	)
 
 	//files := &filesHub{root: cleanRoot(cfg.FMHome), maxUploadSize: cfg.MaxUploadSize}
@@ -102,7 +87,7 @@ func NewHandler(subfolder string, proxyTarget string, auth *auth.Authenticator) 
 	// ------------------------------------------------------------
 	// KasmVNC ReverseProxy
 	// ------------------------------------------------------------
-	vncProxy, err := newVNCProxy(proxyTarget)
+	vncProxy, err := newVNCProxy(cfg.VNC.ProxyTarget)
 	if err != nil {
 		log.Fatalf("create KasmVNC proxy: %v", err)
 	}
@@ -110,7 +95,7 @@ func NewHandler(subfolder string, proxyTarget string, auth *auth.Authenticator) 
 	// ------------------------------------------------------------
 	// Kclient 静态资源
 	// ------------------------------------------------------------
-	kclientStatic := http.FileServer(http.Dir("/var/apps/kasm-lxqt/target/kclient/public"))
+	kclientStatic := http.FileServer(http.Dir(publicDir))
 
 	// ------------------------------------------------------------
 	//  HTTP 请求多路复用器(路由器)，用来根据请求的 URL 路径，分发给不同的处理函数
@@ -128,7 +113,7 @@ func NewHandler(subfolder string, proxyTarget string, auth *auth.Authenticator) 
 	mux.HandleFunc("GET /{$}",
 		func(w http.ResponseWriter, r *http.Request) {
 			log.Printf("render index: subfolder=%q vncPath=%q", cfg.Subfolder, cfg.VNCPath())
-			renderTemplate(w, indexTmpl, pageData{Title: cfg.Title, Path: cfg.VNCPath()}, "text/html; charset=utf-8")
+			renderTemplate(w, indexTmpl, pageData{Title: cfg.Title, VNCPath: cfg.VNCPath()})
 		},
 	)
 
@@ -182,7 +167,7 @@ func NewHandler(subfolder string, proxyTarget string, auth *auth.Authenticator) 
 	)
 
 	// 先挂载二级路径
-	handler := mount(subfolder, mux)
+	handler := mount(cfg.Subfolder, mux)
 
 	// 最外层加认证
 	return auth.Middleware(handler)
@@ -243,4 +228,15 @@ func newVNCProxy(target string) (http.Handler, error) {
 	}
 
 	return proxy, nil
+}
+
+// 模板渲染完整 HTML，成功发给浏览器，失败返回 500
+func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data pageData) {
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	buf.WriteTo(w)
 }
