@@ -77,32 +77,28 @@ func main() {
 }
 
 func httpServer(server *http.Server, cfg config.Config) error {
-	var (
-		listener net.Listener
-		err      error
-	)
-
-	// ------------------------------------------------------------
-	// Unix Socket
-	// ------------------------------------------------------------
 	if cfg.Socket != "" {
 		socketPath := cfg.Socket
 
-		// 删除旧 socket
+		// 启动前清理旧 Socket
 		if err := os.Remove(socketPath); err != nil &&
 			!errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 
 		// 创建 Unix Socket
-		listener, err = net.Listen("unix", socketPath)
+		listener, err := net.Listen("unix", socketPath)
 		if err != nil {
 			return err
 		}
 
-		// 允许 nginx / fnOS gateway 访问
+		// Serve 返回后关闭 Listener
+		defer listener.Close()
+
+		// Server 结束后删除 Socket 文件
+		defer os.Remove(socketPath)
+
 		if err := os.Chmod(socketPath, 0660); err != nil {
-			_ = listener.Close()
 			return err
 		}
 
@@ -111,25 +107,20 @@ func httpServer(server *http.Server, cfg config.Config) error {
 		return server.Serve(listener)
 	}
 
-	// ------------------------------------------------------------
-	// TCP + HTTPS
-	// ------------------------------------------------------------
-	addr := ":" + strconv.Itoa(cfg.VNC.Port)
-
 	// 创建 TCP Listener
-	listener, err = net.Listen("tcp", addr)
+	addr := ":" + strconv.Itoa(cfg.VNC.Port)
+	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
+	defer listener.Close()
 
 	// 检查 HTTPS 配置
 	if cfg.SSL.CertFile == "" {
-		_ = listener.Close()
 		return errors.New("HTTPS certificate file is empty")
 	}
 
 	if cfg.SSL.KeyFile == "" {
-		_ = listener.Close()
 		return errors.New("HTTPS private key file is empty")
 	}
 
