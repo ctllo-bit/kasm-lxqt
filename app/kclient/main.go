@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"kclient/config"
 	"kclient/internal/auth"
 	"kclient/internal/router"
@@ -39,6 +40,12 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	listener, err := createListener(cfg)
+	if err != nil {
+		log.Fatalf("create listener: %v", err)
+	}
+	defer listener.Close()
+
 	//  监听退出信号
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -46,7 +53,7 @@ func main() {
 	// 启动 HTTP Server
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- httpServer(server, cfg)
+		errCh <- httpServer(server, listener, cfg)
 	}()
 
 	// 等待退出信号或 Server 出错
@@ -76,62 +83,55 @@ func main() {
 	log.Println("kclient stopped")
 }
 
-func httpServer(server *http.Server, cfg config.Config) error {
+func httpServer(server *http.Server, listener net.Listener, cfg config.Config) error {
+	if cfg.Socket != "" {
+		log.Printf("kclient listening on unix socket: %s", cfg.Socket)
+		return server.Serve(listener)
+	}
+
+	log.Printf("kclient HTTPS listening on :%d", cfg.VNC.Port)
+	return server.ServeTLS(listener, cfg.SSL.CertFile, cfg.SSL.KeyFile)
+}
+
+func createListener(cfg config.Config) (net.Listener, error) {
 	// ------------------------------------------------------------
 	// Unix Socket
 	// ------------------------------------------------------------
 	if cfg.Socket != "" {
 		socketPath := cfg.Socket
 
-		// 启动前删除旧 Socket
+		// 删除旧 Socket
 		if err := os.Remove(socketPath); err != nil &&
 			!errors.Is(err, os.ErrNotExist) {
-			return err
+			return nil, fmt.Errorf("remove old unix socket %s: %w", socketPath, err)
 		}
 
 		// 创建 Unix Socket
 		listener, err := net.Listen("unix", socketPath)
 		if err != nil {
-			return err
+			return nil, fmt.Errorf("listen unix socket %s: %w", socketPath, err)
 		}
-
-		// Listener 结束后清理资源
-		defer func() {
-			_ = listener.Close()
-			_ = os.Remove(socketPath)
-		}()
 
 		// 设置 Socket 权限
 		if err := os.Chmod(socketPath, 0660); err != nil {
-			return err
+			_ = listener.Close()
+			_ = os.Remove(socketPath)
+
+			return nil, fmt.Errorf("chmod unix socket %s: %w", socketPath, err)
 		}
 
-		log.Printf("kclient listening on unix socket: %s", socketPath)
-		// 启动 HTTP Server
-		return server.Serve(listener)
+		return listener, nil
 	}
 
 	// ------------------------------------------------------------
 	// TCP + HTTPS
 	// ------------------------------------------------------------
 	addr := ":" + strconv.Itoa(cfg.VNC.Port)
-	// 创建 TCP Listener
+
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		return err
-	}
-	defer listener.Close()
-
-	// 检查 HTTPS 配置
-	if cfg.SSL.CertFile == "" {
-		return errors.New("HTTPS certificate file is empty")
+		return nil, fmt.Errorf("listen tcp %s: %w", addr, err)
 	}
 
-	if cfg.SSL.KeyFile == "" {
-		return errors.New("HTTPS private key file is empty")
-	}
-
-	log.Printf("kclient HTTPS listening on :%d", cfg.VNC.Port)
-	// 启动 HTTPS Server
-	return server.ServeTLS(listener, cfg.SSL.CertFile, cfg.SSL.KeyFile)
+	return listener, nil
 }
