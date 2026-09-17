@@ -105,7 +105,10 @@ func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
 	// ------------------------------------------------------------
 	//  静态资源：把整个 kclient 目录作为根
 	// ------------------------------------------------------------
-	mux.Handle("/public/", kclientStatic)
+	mux.Handle(
+		"/public/",
+		http.StripPrefix("/public/", kclientStatic),
+	)
 
 	// ------------------------------------------------------------
 	// 首页
