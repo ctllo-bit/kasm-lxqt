@@ -22,7 +22,7 @@ Group=1001
 Restart=always
 RestartSec=3
 
-ExecStart=${TRIM_APPDEST}/server/kclient 
+ExecStart=${TRIM_APPDEST}/kclient/server
 
 [Install]
 WantedBy=multi-user.target

@@ -5,22 +5,21 @@ amd:
 arm:
 	$(MAKE) build ARCH=arm64
 
-GO_ENV = CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH)
+GO_ENV = CGO_ENABLED=1 GOOS=linux GOARCH=$(ARCH)
 
 build:
-	@rm -f Kasmlqxt-*.fpk
-
 	@echo "==> golang编译 linux-$(ARCH)..."
-	@cd app/server && \
-	$(GO_ENV) go build ./
+	@cd app/kclient && $(GO_ENV) go build -o server ./
 
 	@echo "==> 正在打包 fpk..."
 	@fnpack build
-	@mv kasm-lxqt.fpk Kasmlqxt-$(ARCH).fpk
-	@rm -f app/server/kclient
-	@rm -f /vol1/1000/Kasmlqxt-*.fpk
-	@cp Kasmlqxt-$(ARCH).fpk /vol1/1000/
+	@mv kasm-lxqt.fpk Kasm-$(ARCH).fpk
+
+	@rm -f /vol1/1000/Kasm-*.fpk
+	@cp Kasm-$(ARCH).fpk /vol1/1000/
+	@make clean
 
 clean:
-	@rm -f app/server/kclient
-	@rm -f Kasmlqxt-*.fpk
+	@echo "==> 清理编译文件..."
+	@rm -f app/kclient/server
+	@rm -f Kasm-*.fpk
