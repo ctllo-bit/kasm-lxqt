@@ -2,41 +2,63 @@ package router
 
 import (
 	"errors"
+	"fmt"
+	"kclient/config"
 	"net"
 	"os"
 	"strconv"
 )
 
-// Options 描述监听参数
-type Options struct {
-	Socket string // 非空 → Unix Socket
-	Port   int    // 空 Socket 时用于 TCP
-}
+// 初始化创建 Listener
+func CreateListener(cfg config.Config) (net.Listener, error) {
+	// ------------------------------------------------------------
+	// Unix Socket
+	// ------------------------------------------------------------
+	if cfg.Socket != "" {
+		socketPath := cfg.Socket
 
-func New(opt Options) (net.Listener, error) {
-	if opt.Socket != "" {
-		return createSocket(opt.Socket)
+		// 删除启动前残留的旧 Socket
+		if err := os.Remove(socketPath); err != nil &&
+			!errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("remove old unix socket %s: %w", socketPath, err)
+		}
+
+		// 创建 Unix Socket
+		listener, err := net.Listen("unix", socketPath)
+		if err != nil {
+			return nil, fmt.Errorf("listen unix socket %s: %w", socketPath, err)
+		}
+
+		// 设置 Socket 权限
+		if err := os.Chmod(socketPath, 0660); err != nil {
+			_ = listener.Close()
+			_ = os.Remove(socketPath)
+
+			return nil, fmt.Errorf("chmod unix socket %s: %w", socketPath, err)
+		}
+
+		return listener, nil
 	}
-	return createTCP(opt.Port)
-}
 
-func createTCP(vncPort int) (net.Listener, error) {
-	addr := ":" + strconv.Itoa(vncPort)
-	return net.Listen("tcp", addr)
-}
+	// ------------------------------------------------------------
+	// TCP + HTTPS
+	// ------------------------------------------------------------
 
-func createSocket(socketPath string) (net.Listener, error) {
-	if err := os.Remove(socketPath); err != nil &&
-		!errors.Is(err, os.ErrNotExist) {
-		return nil, err
+	// 先检查 TLS 配置，再打开 TCP 端口
+	if cfg.SSL.CertFile == "" {
+		return nil, errors.New("HTTPS certificate file is empty")
 	}
-	listener, err := net.Listen("unix", socketPath)
+
+	if cfg.SSL.KeyFile == "" {
+		return nil, errors.New("HTTPS private key file is empty")
+	}
+
+	addr := ":" + strconv.Itoa(cfg.VNC.Port)
+
+	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listen tcp %s: %w", addr, err)
 	}
-	if err := os.Chmod(socketPath, 0660); err != nil {
-		_ = listener.Close()
-		return nil, err
-	}
+
 	return listener, nil
 }
