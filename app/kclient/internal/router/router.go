@@ -19,7 +19,7 @@ type pageData struct {
 var baseDir = "/var/apps/kasm-lxqt/target/kclient"
 
 // New 组装所有路由，返回最终 handler（含认证中间件）。
-func New(cfg config.Config, a *auth.Authenticator, vncProxy http.Handler) (http.Handler, error) {
+func NewHandler(cfg config.Config, a *auth.Authenticator, vncProxy http.Handler) (http.Handler, error) {
 	publicDir := filepath.Join(baseDir, "public")
 
 	log.Printf("publicDir=%s", publicDir)
