@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"kclient/config"
 	"kclient/internal/auth"
@@ -9,7 +10,10 @@ import (
 	"kclient/internal/router"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -51,6 +55,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("create listener: %v", err)
 	}
+	defer ln.Close()
 
 	server := &http.Server{
 		Handler:           handler,
@@ -58,10 +63,67 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	// 全部 HTTPS：统一走 ServeTLS
-	if err := server.ServeTLS(ln, cfg.SSL.CertFile, cfg.SSL.KeyFile); err != nil &&
-		!errors.Is(err, http.ErrServerClosed) {
-		log.Fatalf("serve: %v", err)
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		syscall.SIGINT,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	errCh := make(chan error, 1)
+
+	go func() {
+		log.Println("server started")
+		var err error
+		if cfg.Socket != "" {
+			err = server.Serve(ln)
+		} else {
+			err = server.ServeTLS(
+				ln,
+				cfg.SSL.CertFile,
+				cfg.SSL.KeyFile,
+			)
+		}
+		if !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+
+	select {
+	case <-ctx.Done():
+		log.Println("shutdown signal")
+	case err := <-errCh:
+		if err != nil {
+			log.Fatalf("server error:%v", err)
+		}
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(),
+		5*time.Second,
+	)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf(
+			"server shutdown error: %v",
+			err,
+		)
+	}
+
+	if cfg.Socket != "" {
+
+		if err := os.Remove(cfg.Socket); err != nil &&
+			!errors.Is(err, os.ErrNotExist) {
+
+			log.Printf(
+				"remove socket %s: %v",
+				cfg.Socket,
+				err,
+			)
+		}
 	}
 
 }
