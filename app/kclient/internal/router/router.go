@@ -8,6 +8,7 @@ import (
 	"kclient/internal/auth"
 	"log"
 	"net/http"
+	"path/filepath"
 )
 
 type pageData struct {
@@ -15,10 +16,16 @@ type pageData struct {
 	VNCPath string
 }
 
+var baseDir = "/var/apps/kasm-lxqt/target/kclient"
+
 // New 组装所有路由，返回最终 handler（含认证中间件）。
 func New(cfg config.Config, a *auth.Authenticator, vncProxy http.Handler) (http.Handler, error) {
+	publicDir := filepath.Join(baseDir, "public")
+
+	log.Printf("publicDir=%s", publicDir)
+
 	// 启动时解析一次
-	tmpl, err := template.ParseFiles("./public/index.html")
+	tmpl, err := template.ParseFiles(filepath.Join(publicDir, "index.html"))
 	if err != nil {
 		return nil, err
 	}
@@ -41,11 +48,11 @@ func New(cfg config.Config, a *auth.Authenticator, vncProxy http.Handler) (http.
 	mux.HandleFunc("POST /audio/offer", audio.HandleOffer)
 
 	// 本地静态资源
-	mux.Handle("/public/", http.StripPrefix("/public/", http.FileServer(http.Dir("./public"))))
+	mux.Handle("/public/", http.StripPrefix("/public/", http.FileServer(http.Dir(publicDir))))
 
 	// manifest / favicon
-	mux.HandleFunc("/manifest.json", staticFile("./public/manifest.json", "application/manifest+json"))
-	mux.HandleFunc("/favicon.ico", staticFile("./public/favicon.ico", "image/x-icon"))
+	mux.HandleFunc("/manifest.json", staticFile(filepath.Join(publicDir, "manifest.json"), "application/manifest+json"))
+	mux.HandleFunc("/favicon.ico", staticFile(filepath.Join(publicDir, "favicon.ico"), "image/x-icon"))
 
 	// 认证包在最外层
 	return a.Middleware(mux), nil
