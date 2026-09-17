@@ -1,12 +1,19 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"kclient/config"
 	"kclient/internal/auth"
 	"kclient/internal/router"
 	"log"
+	"net"
 	"net/http"
+	"os"
+	"os/signal"
 	"path/filepath"
+	"strconv"
+	"syscall"
 	"time"
 )
 
@@ -32,7 +39,101 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	// 启动 HTTP Server
-	server.ListenAndServeTLS(cfg.SSL.CertFile, cfg.SSL.KeyFile)
+	//  监听退出信号
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
+	// 启动 HTTP Server
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- httpServer(server, cfg)
+	}()
+
+	// 收到 SIGTERM / SIGINT 或 HTTP Server 出错
+	select {
+	case <-ctx.Done():
+		log.Println("shutdown signal received")
+
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server error: %v", err)
+		}
+
+		return
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(),
+		5*time.Second,
+	)
+	defer cancel()
+
+	// 优雅关闭
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("server shutdown error: %v", err)
+	}
+
+	log.Println("kclient stopped")
+}
+
+func httpServer(server *http.Server, cfg config.Config) error {
+	var (
+		listener net.Listener
+		err      error
+	)
+
+	// ------------------------------------------------------------
+	// Unix Socket
+	// ------------------------------------------------------------
+	if cfg.Socket != "" {
+		socketPath := cfg.Socket
+
+		// 删除旧 socket
+		if err := os.Remove(socketPath); err != nil &&
+			!errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+
+		// 创建 Unix Socket
+		listener, err = net.Listen("unix", socketPath)
+		if err != nil {
+			return err
+		}
+
+		// 允许 nginx / fnOS gateway 访问
+		if err := os.Chmod(socketPath, 0660); err != nil {
+			_ = listener.Close()
+			return err
+		}
+
+		log.Printf("kclient listening on unix socket: %s", socketPath)
+		// 启动 HTTP Server
+		return server.Serve(listener)
+	}
+
+	// ------------------------------------------------------------
+	// TCP + HTTPS
+	// ------------------------------------------------------------
+	addr := ":" + strconv.Itoa(cfg.VNC.Port)
+
+	// 创建 TCP Listener
+	listener, err = net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	// 检查 HTTPS 配置
+	if cfg.SSL.CertFile == "" {
+		_ = listener.Close()
+		return errors.New("HTTPS certificate file is empty")
+	}
+
+	if cfg.SSL.KeyFile == "" {
+		_ = listener.Close()
+		return errors.New("HTTPS private key file is empty")
+	}
+
+	log.Printf("kclient HTTPS listening on :%d", cfg.VNC.Port)
+	// 启动 HTTPS Server
+	return server.ServeTLS(listener, cfg.SSL.CertFile, cfg.SSL.KeyFile)
 }
