@@ -23,63 +23,13 @@ type pageData struct {
 	VNCPath string
 }
 
-// // New 组装所有路由，返回最终 handler（含认证中间件）。
-// func NewHandlerf(cfg config.Config, a *auth.Authenticator, vncProxy http.Handler) (http.Handler, error) {
-
-// 	log.Printf("publicDir=%s", publicDir)
-
-// 	// 启动时解析一次
-// 	tmpl, err := template.ParseFiles(filepath.Join(publicDir, "index.html"))
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	mux := http.NewServeMux()
-
-// 	// KasmVNC 页面和静态资源
-// 	mux.Handle("/vnc/", http.StripPrefix("/vnc/", vncProxy))
-
-// 	// 首页 + 兜底代理：非 "/" 的请求全部透传给 KasmVNC，这样 /assets/*、/app/*、/websockify 都能到达上游
-// 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-// 		if r.URL.Path == "/" {
-// 			renderIndex(w, tmpl, cfg) // 传入已解析的模板
-// 			return
-// 		}
-// 		vncProxy.ServeHTTP(w, r)
-// 	})
-
-// 	// Audio WebRTC
-// 	mux.HandleFunc("POST /audio/offer", audio.HandleOffer)
-
-// 	// 本地静态资源
-// 	mux.Handle("/public/", http.StripPrefix("/public/", http.FileServer(http.Dir(publicDir))))
-
-// 	// manifest / favicon
-// 	mux.HandleFunc("/manifest.json", staticFile(filepath.Join(publicDir, "manifest.json"), "application/manifest+json"))
-// 	mux.HandleFunc("/favicon.ico", staticFile(filepath.Join(publicDir, "favicon.ico"), "image/x-icon"))
-
-// 	// 认证包在最外层
-// 	return a.Middleware(mux), nil
-// }
-
-func staticFile(path, contentType string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("Cache-Control", "public, max-age=86400")
-		http.ServeFile(w, r, path)
-	}
-}
-
 const kclientDir = "/var/apps/kasm-lxqt/target/kclient"
 
 func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
-	// 静态资源目录
+	// 根目录资源
 	publicDir := filepath.Join(kclientDir, "public")
-
 	// 加载 index.html 模板
-	indexTmpl := template.Must(
-		template.ParseFiles(filepath.Join(publicDir, "index.html")),
-	)
+	indexTmpl := template.Must(template.ParseFiles(filepath.Join(publicDir, "index.html")))
 
 	//files := &filesHub{root: cleanRoot(cfg.FMHome), maxUploadSize: cfg.MaxUploadSize}
 	//audio := newAudioHub(cfg.Audio.Device, cfg.Audio.Server, cfg.MicSocket)
@@ -93,22 +43,19 @@ func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
 	}
 
 	// ------------------------------------------------------------
-	// Kclient 静态资源
-	// ------------------------------------------------------------
-	kclientStatic := http.FileServer(http.Dir(publicDir))
-
-	// ------------------------------------------------------------
 	//  HTTP 请求多路复用器(路由器)，用来根据请求的 URL 路径，分发给不同的处理函数
 	// ------------------------------------------------------------
 	mux := http.NewServeMux()
 
 	// ------------------------------------------------------------
-	//  静态资源：把整个 kclient 目录作为根
+	// Kclient 静态资源
 	// ------------------------------------------------------------
-	mux.Handle(
-		"/public/",
-		http.StripPrefix("/public/", kclientStatic),
-	)
+	kclientStatic := http.FileServer(http.Dir(publicDir))
+	mux.Handle("/public/", http.StripPrefix("/public/", kclientStatic))
+
+	// manifest / favicon
+	mux.HandleFunc("/manifest.json", staticFile(filepath.Join(publicDir, "manifest.json"), "application/manifest+json"))
+	mux.HandleFunc("/favicon.ico", staticFile(filepath.Join(publicDir, "favicon.ico"), "image/x-icon"))
 
 	// ------------------------------------------------------------
 	// 首页
@@ -127,7 +74,6 @@ func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
 	//     ↓
 	// https://127.0.0.1:6901/index.html
 	// ------------------------------------------------------------
-
 	mux.Handle("/vnc/", http.StripPrefix("/vnc", vncProxy))
 
 	// ------------------------------------------------------------
@@ -136,14 +82,12 @@ func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
 	// /websockify
 	// /websockify/*
 	// ------------------------------------------------------------
-
 	mux.Handle("/websockify", vncProxy)
 	mux.Handle("/websockify/", vncProxy)
 
 	// ------------------------------------------------------------
 	// Audio WebRTC
 	// ------------------------------------------------------------
-
 	mux.HandleFunc("POST /audio/offer", audio.HandleOffer)
 
 	// ------------------------------------------------------------
@@ -231,6 +175,15 @@ func newVNCProxy(target string) (http.Handler, error) {
 	}
 
 	return proxy, nil
+}
+
+// 将服务器上的文件作为 HTTP 响应返回给浏览器
+func staticFile(path, contentType string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		http.ServeFile(w, r, path)
+	}
 }
 
 // 模板渲染完整 HTML，成功发给浏览器，失败返回 500
