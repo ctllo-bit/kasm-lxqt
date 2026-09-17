@@ -49,7 +49,7 @@ func main() {
 		errCh <- httpServer(server, cfg)
 	}()
 
-	// 收到 SIGTERM / SIGINT 或 HTTP Server 出错
+	// 等待退出信号或 Server 出错
 	select {
 	case <-ctx.Done():
 		log.Println("shutdown signal received")
@@ -62,13 +62,13 @@ func main() {
 		return
 	}
 
+	// 优雅关闭
 	shutdownCtx, cancel := context.WithTimeout(
 		context.Background(),
 		5*time.Second,
 	)
 	defer cancel()
 
-	// 优雅关闭
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("server shutdown error: %v", err)
 	}
@@ -77,10 +77,13 @@ func main() {
 }
 
 func httpServer(server *http.Server, cfg config.Config) error {
+	// ------------------------------------------------------------
+	// Unix Socket
+	// ------------------------------------------------------------
 	if cfg.Socket != "" {
 		socketPath := cfg.Socket
 
-		// 启动前清理旧 Socket
+		// 启动前删除旧 Socket
 		if err := os.Remove(socketPath); err != nil &&
 			!errors.Is(err, os.ErrNotExist) {
 			return err
@@ -92,12 +95,13 @@ func httpServer(server *http.Server, cfg config.Config) error {
 			return err
 		}
 
-		// Serve 返回后关闭 Listener
-		defer listener.Close()
+		// Listener 结束后清理资源
+		defer func() {
+			_ = listener.Close()
+			_ = os.Remove(socketPath)
+		}()
 
-		// Server 结束后删除 Socket 文件
-		defer os.Remove(socketPath)
-
+		// 设置 Socket 权限
 		if err := os.Chmod(socketPath, 0660); err != nil {
 			return err
 		}
@@ -107,8 +111,11 @@ func httpServer(server *http.Server, cfg config.Config) error {
 		return server.Serve(listener)
 	}
 
-	// 创建 TCP Listener
+	// ------------------------------------------------------------
+	// TCP + HTTPS
+	// ------------------------------------------------------------
 	addr := ":" + strconv.Itoa(cfg.VNC.Port)
+	// 创建 TCP Listener
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
