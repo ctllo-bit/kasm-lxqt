@@ -158,6 +158,8 @@ cat > "${REMOTE_HOME}/.vnc/kclient.yaml" <<EOF
 subfolder: "/"
 title: "KasmVNC Client"
 
+auth: false
+
 fm_home: "$REMOTE_HOME"
 
 vnc:

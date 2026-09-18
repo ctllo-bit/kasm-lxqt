@@ -11,6 +11,8 @@ type Config struct {
 	Subfolder string `yaml:"subfolder"`
 	Title     string `yaml:"title"`
 
+	AuthEnabled bool `yaml:"auth"`
+
 	VNC struct {
 		Port        int    `yaml:"port"`
 		ProxyTarget string `yaml:"proxy_target"`

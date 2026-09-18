@@ -107,8 +107,12 @@ func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
 	// 先挂载二级路径
 	handler := mount(cfg.Subfolder, mux)
 
-	// 最外层加认证
-	return auth.Middleware(handler)
+	// 根据配置决定是否启用浏览器认证,最外层加认证
+	if cfg.AuthEnabled {
+		return auth.Middleware(handler)
+	}
+
+	return handler
 }
 
 // 给整个 HTTP 服务挂载一个访问前缀
