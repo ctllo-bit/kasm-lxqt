@@ -74,7 +74,7 @@ func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
 	//     ↓
 	// https://127.0.0.1:6901/index.html
 	// ------------------------------------------------------------
-	mux.Handle("/vnc/", http.StripPrefix("/vnc", vncProxy))
+	mux.Handle("/vnc/", http.StripPrefix("/vnc", http.FileServer(http.Dir("/usr/share/kasmvnc/www/"))))
 
 	// ------------------------------------------------------------
 	// KasmVNC WebSocket
