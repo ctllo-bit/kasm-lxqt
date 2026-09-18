@@ -155,10 +155,11 @@ EOF
 
 # 创建 kclient 配置文件
 cat > "${REMOTE_HOME}/.vnc/kclient.yaml" <<EOF
-subfolder: "/"
+subfolder: "/app/kasm-lxqt"
 title: "KasmVNC Client"
 
 auth: false
+socket:  ${TRIM_APPDEST}/kclient.sock
 
 fm_home: "$REMOTE_HOME"
 
