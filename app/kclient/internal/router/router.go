@@ -3,19 +3,18 @@ package router
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"html/template"
 	"kclient/config"
 	"kclient/internal/audio"
 	"kclient/internal/auth"
 	"log"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 type pageData struct {
@@ -52,6 +51,7 @@ func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
 	// ------------------------------------------------------------
 	kclientStatic := http.FileServer(http.Dir(publicDir))
 	mux.Handle("/public/", http.StripPrefix("/public/", kclientStatic))
+	mux.Handle("/vnc/", http.StripPrefix("/vnc", http.FileServer(http.Dir("/usr/share/kasmvnc/www/"))))
 
 	// manifest / favicon
 	mux.HandleFunc("/manifest.json", staticFile(filepath.Join(publicDir, "manifest.json"), "application/manifest+json"))
@@ -66,15 +66,6 @@ func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
 			renderTemplate(w, indexTmpl, pageData{Title: cfg.Title, VNCPath: cfg.VNCPath()})
 		},
 	)
-
-	// ------------------------------------------------------------
-	// KasmVNC
-	//
-	// /vnc/index.html
-	//     ↓
-	// https://127.0.0.1:6901/index.html
-	// ------------------------------------------------------------
-	mux.Handle("/vnc/", http.StripPrefix("/vnc", http.FileServer(http.Dir("/usr/share/kasmvnc/www/"))))
 
 	// ------------------------------------------------------------
 	// KasmVNC WebSocket
@@ -153,15 +144,21 @@ func newVNCProxy(target string) (http.Handler, error) {
 
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
+			// 转发到 KasmVNC
 			r.SetURL(u)
+
+			// KasmVNC Basic Auth
+			auth := "abc:123456"
+			r.Out.Header.Set(
+				"Authorization",
+				"Basic "+base64.StdEncoding.EncodeToString([]byte(auth)),
+			)
+			// Host 改成 KasmVNC
+			r.Out.Host = u.Host
+			// 添加 X-Forwarded-*
 			r.SetXForwarded()
 		},
 		Transport: &http.Transport{
-			DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ResponseHeaderTimeout: 30 * time.Second,
-			IdleConnTimeout:       90 * time.Second,
-			MaxIdleConnsPerHost:   100,
 			TLSClientConfig: &tls.Config{
 				MinVersion:         tls.VersionTLS12,
 				InsecureSkipVerify: true, // KasmVNC 本地自签名，仅限可信回环
