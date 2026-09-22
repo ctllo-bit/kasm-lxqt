@@ -8,17 +8,19 @@ import (
 )
 
 type Config struct {
-	Subfolder string `yaml:"subfolder"`
-	Title     string `yaml:"title"`
+	Mode string `yaml:"mode"`
 
-	AuthEnabled bool `yaml:"auth"`
+	Subfolder      string `yaml:"subfolder"`
+	Title          string `yaml:"title"`
+	VNCProxyTarget string `yaml:"proxy_target"`
 
-	VNC struct {
-		Port        int    `yaml:"port"`
-		ProxyTarget string `yaml:"proxy_target"`
-	} `yaml:"vnc"`
+	Listen struct {
+		// gateway 模式使用
+		Socket string `yaml:"socket"`
 
-	Socket string `yaml:"socket"`
+		// port 模式使用
+		Port int `yaml:"port"`
+	} `yaml:"listen"`
 
 	SSL struct {
 		CertFile string `yaml:"pem_certificate"`
@@ -38,6 +40,7 @@ type Config struct {
 func Load(home string) Config {
 	// 设置硬编码的默认值
 	cfg := Config{
+		Mode:          "port",
 		Subfolder:     "/",
 		Title:         "KasmVNC Client",
 		MaxUploadSize: 200000000,

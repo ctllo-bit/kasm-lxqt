@@ -52,12 +52,12 @@ func run() error {
 	}
 
 	// 确保 Unix Socket 文件在退出时被清理
-	if cfg.Socket != "" {
+	if cfg.Mode == "gateway" && cfg.Listen.Socket != "" {
 		defer func() {
-			if err := os.Remove(cfg.Socket); err != nil && !errors.Is(err, os.ErrNotExist) {
-				log.Printf("remove unix socket %s error: %v", cfg.Socket, err)
+			if err := os.Remove(cfg.Listen.Socket); err != nil && !errors.Is(err, os.ErrNotExist) {
+				log.Printf("remove unix socket %s error: %v", cfg.Listen.Socket, err)
 			} else {
-				log.Printf("unix socket %s cleaned up", cfg.Socket)
+				log.Printf("unix socket %s cleaned up", cfg.Listen.Socket)
 			}
 		}()
 	}
@@ -69,12 +69,15 @@ func run() error {
 	// 启动 HTTP Server
 	errCh := make(chan error, 1)
 	go func() {
-		if cfg.Socket != "" {
-			log.Printf("kclient listening on unix socket: %s", cfg.Socket)
+		switch cfg.Mode {
+		case "gateway":
+			log.Printf("kclient listening on unix socket: %s", cfg.Listen.Socket)
 			errCh <- server.Serve(listener)
-		} else {
-			log.Printf("kclient HTTPS listening on :%d", cfg.VNC.Port)
+		case "port":
+			log.Printf("kclient HTTPS listening on :%d", cfg.Listen.Port)
 			errCh <- server.ServeTLS(listener, cfg.SSL.CertFile, cfg.SSL.KeyFile)
+		default:
+			errCh <- fmt.Errorf("invalid mode: %q", cfg.Mode)
 		}
 	}()
 

@@ -153,23 +153,22 @@ logging:
   level: 100
 EOF
 
-# 创建 kclient 配置文件
+# 创建 kclient 配置文件 gateway 或 port
 cat > "${REMOTE_HOME}/.vnc/kclient.yaml" <<EOF
+mode: gateway
+
 subfolder: "/app/kasm-lxqt"
 title: "KasmVNC Client"
 
-auth: false
-socket:  ${TRIM_APPDEST}/kclient.sock
+proxy_target: "https://127.0.0.1:6901"
 
-fm_home: "$REMOTE_HOME"
-
-vnc:
+listen:
+  socket: "${TRIM_APPDEST}/kclient.sock"
   port: ${wizard_port}
-  proxy_target: "https://127.0.0.1:6901"
 
 ssl:
-  pem_certificate: $REMOTE_HOME/.vnc/self.pem
-  pem_key: $REMOTE_HOME/.vnc/self.key
+  pem_certificate: "${REMOTE_HOME}/.vnc/self.pem"
+  pem_key: "${REMOTE_HOME}/.vnc/self.key"
 
 audio:
   device: "kasm_sink.monitor"

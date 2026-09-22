@@ -4,16 +4,20 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"html/template"
 	"kclient/config"
 	"kclient/internal/audio"
 	"kclient/internal/auth"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -36,7 +40,7 @@ func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
 	// ------------------------------------------------------------
 	// KasmVNC ReverseProxy
 	// ------------------------------------------------------------
-	vncProxy, err := newVNCProxy(cfg.VNC.ProxyTarget)
+	vncProxy, err := newVNCProxy(cfg.VNCProxyTarget)
 	if err != nil {
 		log.Fatalf("create KasmVNC proxy: %v", err)
 	}
@@ -108,7 +112,7 @@ func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
 	handler := mount(cfg.Subfolder, mux)
 
 	// 根据配置决定是否启用浏览器认证,最外层加认证
-	if cfg.AuthEnabled {
+	if cfg.Mode == "port" {
 		return auth.Middleware(handler)
 	}
 
@@ -196,4 +200,63 @@ func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data pageDat
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	buf.WriteTo(w)
+}
+
+// 初始化创建 Listener
+func CreateListener(cfg config.Config) (net.Listener, error) {
+	switch cfg.Mode {
+	// ============================================================
+	// Gateway 模式
+	// 飞牛统一网关 -> Unix Socket -> kclient
+	// ============================================================
+	case "gateway":
+		if cfg.Listen.Socket == "" {
+			return nil, errors.New("gateway mode: listen.socket is empty")
+		}
+
+		socketPath := cfg.Listen.Socket
+
+		// 删除启动前残留的旧 Socket
+		if err := os.Remove(socketPath); err != nil &&
+			!errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("remove old unix socket %s: %w", socketPath, err)
+		}
+
+		// 创建 Unix Socket
+		listener, err := net.Listen("unix", socketPath)
+		if err != nil {
+			return nil, fmt.Errorf("listen unix socket %s: %w", socketPath, err)
+		}
+
+		// 设置 Socket 权限
+		if err := os.Chmod(socketPath, 0660); err != nil {
+			_ = listener.Close()
+			_ = os.Remove(socketPath)
+
+			return nil, fmt.Errorf("chmod unix socket %s: %w", socketPath, err)
+		}
+
+		return listener, nil
+
+	// ============================================================
+	// Port 模式
+	// 浏览器 -> TCP -> kclient
+	// ============================================================
+	case "port":
+		if cfg.Listen.Port <= 0 || cfg.Listen.Port > 65535 {
+			return nil, fmt.Errorf("port mode: invalid listen.port %d", cfg.Listen.Port)
+		}
+		addr := ":" + strconv.Itoa(cfg.Listen.Port)
+
+		listener, err := net.Listen("tcp", addr)
+
+		if err != nil {
+			return nil, fmt.Errorf("listen tcp %s: %w", addr, err)
+		}
+
+		return listener, nil
+	default:
+		return nil, fmt.Errorf("invalid mode %q, expected gateway or port", cfg.Mode)
+	}
+
 }
