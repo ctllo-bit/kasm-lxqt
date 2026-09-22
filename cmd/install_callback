@@ -5,30 +5,19 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
 }
 
+# KasmVNC自己认证 或 外层 kclient / 网关负责
+KASMVNC_AUTH_ENABLED=false
+
 # 安装KasmVNC
 sudo apt install -y /var/apps/kasm-lxqt/target/server/kasmvncserver_bookworm_*.deb
 
-log_msg "[INFO] 配置KasmVNC的客户端..."
-sudo tee "/etc/systemd/system/kasm-client.service" > /dev/null <<EOF
-[Unit]
-Description=kasm-client
-After=kasmvnc.service
-Requires=kasmvnc.service
-
-[Service]
-Type=simple
-User=1000
-Group=1001
-Restart=always
-RestartSec=3
-
-ExecStart=${TRIM_APPDEST}/kclient/server
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
 REMOTE_HOME="/home/remote-desktop"
+if [ "${KASMVNC_AUTH_ENABLED}" = "true" ]; then
+    KASMVNC_AUTH_ARGS=""
+else
+    KASMVNC_AUTH_ARGS="-disableBasicAuth -SecurityTypes None"
+fi
+
 log_msg "[INFO] 配置KasmVNC的Systemd服务..."
 sudo tee "/etc/systemd/system/kasmvnc.service" > /dev/null <<EOF
 [Unit]
@@ -50,11 +39,31 @@ RuntimeDirectory=remote-desktop
 RuntimeDirectoryMode=0700
 
 ExecStartPre=/usr/bin/pulseaudio --daemonize=yes --log-level=0 --exit-idle-time=-1
-ExecStart=/usr/bin/kasmvncserver
+ExecStart=/usr/bin/kasmvncserver ${KASMVNC_AUTH_ARGS}
 ExecStop=/usr/bin/kasmvncserver -kill
 
 Restart=always
 RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+log_msg "[INFO] 配置KasmVNC的客户端..."
+sudo tee "/etc/systemd/system/kasm-client.service" > /dev/null <<EOF
+[Unit]
+Description=kasm-client
+After=kasmvnc.service
+Requires=kasmvnc.service
+
+[Service]
+Type=simple
+User=1000
+Group=1001
+Restart=always
+RestartSec=3
+
+ExecStart=${TRIM_APPDEST}/kclient/server
 
 [Install]
 WantedBy=multi-user.target
