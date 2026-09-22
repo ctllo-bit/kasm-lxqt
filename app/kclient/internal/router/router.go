@@ -3,7 +3,6 @@ package router
 import (
 	"bytes"
 	"crypto/tls"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"html/template"
@@ -154,13 +153,6 @@ func newVNCProxy(target string) (http.Handler, error) {
 		Rewrite: func(r *httputil.ProxyRequest) {
 			// 转发到 KasmVNC
 			r.SetURL(u)
-
-			// KasmVNC Basic Auth
-			auth := "abc:123456"
-			r.Out.Header.Set(
-				"Authorization",
-				"Basic "+base64.StdEncoding.EncodeToString([]byte(auth)),
-			)
 			// Host 改成 KasmVNC
 			r.Out.Host = u.Host
 			// 添加 X-Forwarded-*
