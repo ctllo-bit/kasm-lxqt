@@ -18,90 +18,6 @@ eventer(messageEvent,function(e) {
   }
 },false);
 
-//// PCM player ////
-var buffer = [];
-var playing = false;
-var lock = false;
-// Check for audio stop to reset buffer
-setInterval(function() {
-  if (playing) {
-    if (!lock) {
-      buffer = [];
-      playing = false;
-    }
-    lock = false;
-  }
-}, 100);
-function PCM() {
-  this.init()
-}
-// Player Init
-PCM.prototype.init = function() {
-  // Establish audio context
-  this.audioCtx = new(window.AudioContext || window.webkitAudioContext)({
-    sampleRate: 44100
-  })
-  this.audioCtx.resume()
-  this.gainNode = this.audioCtx.createGain()
-  this.gainNode.gain.value = 1
-  this.gainNode.connect(this.audioCtx.destination)
-  this.startTime = this.audioCtx.currentTime
-}
-// Stereo player
-PCM.prototype.feed = function(data) {
-  lock = true;
-  // Convert bytes to typed array then float32 array
-  let i16Array = new Int16Array(data, 0, data.length);
-  let f32Array = Float32Array.from(i16Array, x => x / 32767);
-  buffer = new Float32Array([...buffer, ...f32Array]);
-  let buffAudio = this.audioCtx.createBuffer(2, buffer.length, 44100);
-  let duration = buffAudio.duration / 2;
-  if ((duration > .05) || (playing)) {
-    playing = true;
-    let buffSource = this.audioCtx.createBufferSource();
-    let arrLength = buffer.length / 2;
-    let left = buffAudio.getChannelData(0);
-    let right = buffAudio.getChannelData(1);
-    let byteCount = 0;
-    let offset = 1;
-    for (let count = 0; count < arrLength; count++) {
-      left[count] = buffer[byteCount];
-      byteCount += 2;
-      right[count] = buffer[offset];
-      offset += 2;
-    }
-    buffer = [];
-    if (this.startTime < this.audioCtx.currentTime) {
-      this.startTime = this.audioCtx.currentTime;
-    }
-    buffSource.buffer = buffAudio;
-    buffSource.connect(this.gainNode);
-    buffSource.start(this.startTime);
-    this.startTime += duration;
-  }
-}
-// Destroy player
-PCM.prototype.destroy = function() {
-  buffer = [];
-  playing = false;
-  this.audioCtx.close();
-  this.audioCtx = null;
-};
-
-// Handle Toggle divs
-function openToggle(id) {
-  if ($(id).is(":hidden")) {
-    $(id).slideToggle(300);
-  }
-}
-function closeToggle(id) {
-  if ($(id).is(":visible")) {
-    $(id).slideToggle(300);
-  }
-}
-function toggle(id) {
-  $(id).slideToggle(300);
-}
 
 // Fullscreen handler
 function fullscreen() {
@@ -128,47 +44,93 @@ function fullscreen() {
   }
 }
 
-// Native WebSocket comms for audio. The Go server sends raw PCM frames as binary messages.
-var socketProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-var socket = new WebSocket(socketProtocol + '//' + window.location.host + window.location.pathname + 'audio/ws');
-socket.binaryType = 'arraybuffer';
-var player = {};
-var micEnabled = false;
-var micWorkletNode; // To store the AudioWorkletNode
-var audio_context;
+//// WebRTC audio (recvonly) ////
+var audioPc = null;
+var audioEl = null;
 
-function audio() {
-  if (('audioCtx' in player) && (player.audioCtx)) {
-    player.destroy();
-    sendAudioControl('close');
+async function audio() {
+  // 已开 -> 关
+  if (audioPc) {
+    audioPc.close();
+    audioPc = null;
+    if (audioEl) { audioEl.srcObject = null; audioEl = null; }
     $('#audioButton').removeClass("icons-selected");
     return;
   }
-  sendAudioControl('open');
-  player = new PCM();
+
   $('#audioButton').addClass("icons-selected");
-}
 
-function processAudio(data) {
-  player.feed(data);
-}
-
-function sendAudioControl(type) {
-  if (socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify({ type: type }));
-  }
-}
-
-socket.addEventListener('message', function(event) {
-  if (event.data instanceof ArrayBuffer) {
-    processAudio(event.data);
-    return;
-  }
   try {
-    var message = JSON.parse(event.data);
-    if (message.type === 'error') console.error('audio error:', message.error);
-  } catch (_) {}
-});
+    const pc = new RTCPeerConnection({
+      // 跨机器时建议加 STUN；同机/同网段可留空
+      // iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+    audioPc = pc;
+
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+
+    pc.ontrack = (e) => {
+      audioEl = new Audio();
+      audioEl.srcObject = e.streams[0];
+      audioEl.autoplay = true;
+      audioEl.play().catch(err => console.error('audio play:', err));
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log('WebRTC state:', pc.connectionState);
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        if (audioPc === pc) {
+          audioPc = null;
+          $('#audioButton').removeClass("icons-selected");
+        }
+      }
+    };
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    // 相对当前页面，最终命中 /app/kasm-lxqt/audio/offer
+    const res = await fetch('audio/offer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/sdp' },
+      body: pc.localDescription.sdp,
+    });
+
+    if (!res.ok) {
+      throw new Error('audio/offer ' + res.status + ': ' + await res.text());
+    }
+
+    await pc.setRemoteDescription({
+      type: 'answer',
+      sdp: await res.text(),
+    });
+  } catch (err) {
+    console.error('audio error:', err);
+    if (audioPc) { audioPc.close(); audioPc = null; }
+    $('#audioButton').removeClass("icons-selected");
+  }
+}
+
+//// 麦克风：后端目前没有上行 track，先禁用 ////
+function mic() {
+  console.warn('mic not implemented for WebRTC backend yet');
+}
+
+// Handle Toggle divs
+function openToggle(id) {
+  if ($(id).is(":hidden")) {
+    $(id).slideToggle(300);
+  }
+}
+function closeToggle(id) {
+  if ($(id).is(":visible")) {
+    $(id).slideToggle(300);
+  }
+}
+function toggle(id) {
+  $(id).slideToggle(300);
+}
+
 
 // Define the AudioWorkletProcessor as a string.
 const micWorkletProcessorCode = `

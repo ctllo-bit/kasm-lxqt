@@ -107,6 +107,9 @@ load-module module-native-protocol-unix
 load-module module-null-sink sink_name=kasm_sink sink_properties=device.description=KasmAudio
 load-module module-remap-source source_name=virtmic master=kasm_sink.monitor
 
+# 关键：不恢复上次的路由，让下面的 set-default-sink 每次生效
+load-module module-stream-restore restore_device=false
+
 set-default-sink kasm_sink
 set-default-source virtmic
 EOF
