@@ -17,7 +17,18 @@ PCM 很大，不适合直接通过 WebRTC 发送，所以要编码：
 #include <stdlib.h>
 
 static OpusEncoder* create_encoder(int sample_rate, int channels, int application, int* err) {
-    return opus_encoder_create(sample_rate, channels, application, err);
+    OpusEncoder* enc = opus_encoder_create(sample_rate, channels, application, err);
+    if (enc == NULL || *err != OPUS_OK) {
+        return enc;
+    }
+
+    opus_encoder_ctl(enc, OPUS_SET_BITRATE(96000));            // 96 kbps
+    opus_encoder_ctl(enc, OPUS_SET_COMPLEXITY(5));            // 最高复杂度
+    opus_encoder_ctl(enc, OPUS_SET_SIGNAL(OPUS_SIGNAL_MUSIC)); // 音乐模式
+	opus_encoder_ctl(enc, OPUS_SET_PACKET_LOSS_PERC(10));  // 假设 10% 丢包
+    opus_encoder_ctl(enc, OPUS_SET_INBAND_FEC(1));             // 打开 FEC
+
+    return enc;
 }
 
 static void destroy_encoder(OpusEncoder* enc) {
@@ -29,17 +40,9 @@ static int encode_frame(
     const opus_int16* pcm,
     int frame_size,
     unsigned char* output,
-    int max_data_bytes,
-    int fec
+    int max_data_bytes
 ) {
-    opus_encoder_ctl(enc, OPUS_SET_INBAND_FEC(fec));
-    return opus_encode(
-        enc,
-        pcm,
-        frame_size,
-        output,
-        max_data_bytes
-    );
+    return opus_encode(enc, pcm, frame_size, output, max_data_bytes);
 }
 */
 import "C"
@@ -94,7 +97,6 @@ func (e *OpusEncoder) Encode(pcm []byte) ([]byte, error) {
 		C.int(FrameSamples),
 		outPtr,
 		C.int(len(out)),
-		0,
 	)
 
 	if n < 0 {

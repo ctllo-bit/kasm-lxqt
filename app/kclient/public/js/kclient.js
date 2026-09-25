@@ -74,6 +74,19 @@ async function audio() {
       audioEl.srcObject = e.streams[0];
       audioEl.autoplay = true;
       audioEl.play().catch(err => console.error('audio play:', err));
+
+      // ★ 尽量压低 jitter buffer
+      const receiver = pc.getReceivers().find(r => r.track.kind === 'audio');
+      if (receiver) {
+        // 新版 Chrome/Edge
+        if ('jitterBufferTarget' in receiver) {
+          receiver.jitterBufferTarget = 0;  // 毫秒，0=最小
+        }
+        // 旧版 API
+        if ('playoutDelayHint' in receiver) {
+          receiver.playoutDelayHint = 0;
+        }
+      }
     };
 
     pc.onconnectionstatechange = () => {
@@ -111,7 +124,7 @@ async function audio() {
   }
 }
 
-//// 麦克风：后端目前没有上行 track，先禁用 ////
+// 麦克风：后端目前没有上行 track，先禁用 ////
 function mic() {
   console.warn('mic not implemented for WebRTC backend yet');
 }
@@ -129,77 +142,4 @@ function closeToggle(id) {
 }
 function toggle(id) {
   $(id).slideToggle(300);
-}
-
-
-// Define the AudioWorkletProcessor as a string.
-const micWorkletProcessorCode = `
-class MicWorkletProcessor extends AudioWorkletProcessor {
-  constructor() {
-    super();
-  }
-
-  process(inputs, outputs, parameters) {
-    const input = inputs[0];
-
-    if (input && input[0]) { // Check if input and channel data are available
-      const inputChannelData = input[0];
-      const int16Array = Int16Array.from(inputChannelData, x => x * 32767);
-      if (! int16Array.every(item => item === 0)) {
-        this.port.postMessage({ buffer: int16Array.buffer });
-      }
-    }
-    return true; // Keep the processor alive
-  }
-}
-
-registerProcessor('mic-worklet-processor', MicWorkletProcessor);
-`;
-
-async function mic() {
-  if (micEnabled) {
-    $('#micButton').removeClass("icons-selected");
-    if (micWorkletNode) {
-      micWorkletNode.disconnect();
-      micWorkletNode = null; // Release the node
-    }
-    if (audio_context) {
-      audio_context.close();
-      audio_context = null;
-    }
-    micEnabled = false;
-    return;
-  }
-  $('#micButton').addClass("icons-selected");
-  micEnabled = true;
-  var mediaConstraints = {
-    audio: true
-  };
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-    audio_context = new window.AudioContext();
-
-    // Create a URL for the AudioWorkletProcessor code
-    const micWorkletProcessorBlob = new Blob([micWorkletProcessorCode], { type: 'text/javascript' });
-    const micWorkletProcessorURL = URL.createObjectURL(micWorkletProcessorBlob);
-
-    await audio_context.audioWorklet.addModule(micWorkletProcessorURL);
-
-    micWorkletNode = new AudioWorkletNode(audio_context, 'mic-worklet-processor');
-
-    micWorkletNode.port.onmessage = (event) => {
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(event.data.buffer);
-      }
-    };
-
-    let source = audio_context.createMediaStreamSource(stream);
-    source.connect(micWorkletNode);
-
-  } catch (e) {
-    console.error('media error', e);
-    $('#micButton').removeClass("icons-selected");
-    micEnabled = false;
-  }
 }
