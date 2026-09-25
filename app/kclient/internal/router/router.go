@@ -69,7 +69,7 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 	// 登陆页面：不需要 session
 	// ------------------------------------------------------------
 	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
-		renderTemplate(w, loginTmpl, pageData{Title: cfg.Title, Path: cfg.ResolvePath("/login")})
+		renderTemplate(w, loginTmpl, pageData{Title: cfg.Title, Path: cfg.ResolvePath("login")})
 	})
 
 	mux.HandleFunc("POST /login",
@@ -128,10 +128,10 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 
 		if _, ok := sessionStore.GetFromRequest(r); !ok {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			http.Redirect(w, r, cfg.ResolvePath("login"), http.StatusSeeOther)
 			return
 		}
-		renderTemplate(w, indexTmpl, pageData{Title: cfg.Title, Path: cfg.ResolvePath("/websockify")})
+		renderTemplate(w, indexTmpl, pageData{Title: cfg.Title, Path: cfg.ResolvePath("websockify")})
 	})
 
 	// ------------------------------------------------------------
