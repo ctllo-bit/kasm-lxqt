@@ -3,6 +3,7 @@ package router
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"html/template"
@@ -21,17 +22,21 @@ import (
 )
 
 type pageData struct {
-	Title   string
-	VNCPath string
+	Title string
+	Path  string
 }
 
 const kclientDir = "/var/apps/kasm-lxqt/target/kclient"
 
-func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
+func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handler {
 	// 根目录资源
 	publicDir := filepath.Join(kclientDir, "public")
 	// 加载 index.html 模板
 	indexTmpl := template.Must(template.ParseFiles(filepath.Join(publicDir, "index.html")))
+	// 加载 login.html 登陆模板
+	loginTmpl := template.Must(template.ParseFiles(filepath.Join(publicDir, "login.html")))
+
+	sessionStore := auth.NewSessionStore()
 
 	//files := &filesHub{root: cleanRoot(cfg.FMHome), maxUploadSize: cfg.MaxUploadSize}
 	//audio := newAudioHub(cfg.Audio.Device, cfg.Audio.Server, cfg.MicSocket)
@@ -61,14 +66,73 @@ func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
 	mux.HandleFunc("/favicon.ico", staticFile(filepath.Join(publicDir, "favicon.ico"), "image/x-icon"))
 
 	// ------------------------------------------------------------
-	// 首页
+	// 登陆页面：不需要 session
 	// ------------------------------------------------------------
-	mux.HandleFunc("GET /{$}",
+	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
+		renderTemplate(w, loginTmpl, pageData{Title: cfg.Title, Path: cfg.ResolvePath("/login")})
+	})
+
+	mux.HandleFunc("POST /login",
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Printf("render index: subfolder=%q vncPath=%q", cfg.Subfolder, cfg.VNCPath())
-			renderTemplate(w, indexTmpl, pageData{Title: cfg.Title, VNCPath: cfg.VNCPath()})
+
+			username := r.FormValue("username")
+			password := r.FormValue("password")
+
+			// 验证 .kasmpasswd
+			if !authenticator.Verify(username, password) {
+				http.Error(
+					w,
+					"用户名或密码错误",
+					http.StatusUnauthorized,
+				)
+				return
+			}
+
+			// 生成 Authorization: Basic xxx
+			raw := username + ":" + password
+
+			authorization := "Basic " +
+				base64.StdEncoding.EncodeToString(
+					[]byte(raw),
+				)
+
+			// 创建 Session
+			sessionID, err := sessionStore.Create(authorization)
+			if err != nil {
+				http.Error(
+					w,
+					"failed to create session",
+					http.StatusInternalServerError,
+				)
+				return
+			}
+
+			// 保存 Session Cookie
+			http.SetCookie(w, &http.Cookie{
+				Name:     "kclient_session",
+				Value:    sessionID,
+				Path:     "/",
+				HttpOnly: true,
+				Secure:   true,
+				SameSite: http.SameSiteLaxMode,
+			})
+
+			// 登录成功
+			http.Redirect(w, r, "/", http.StatusSeeOther)
 		},
 	)
+
+	// ------------------------------------------------------------
+	// 首页：需要 session
+	// ------------------------------------------------------------
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+
+		if _, ok := sessionStore.GetFromRequest(r); !ok {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		renderTemplate(w, indexTmpl, pageData{Title: cfg.Title, Path: cfg.ResolvePath("/websockify")})
+	})
 
 	// ------------------------------------------------------------
 	// KasmVNC WebSocket
@@ -112,7 +176,7 @@ func NewHandler(cfg config.Config, auth *auth.Authenticator) http.Handler {
 
 	// 根据配置决定是否启用浏览器认证,最外层加认证
 	if cfg.Mode == "port" {
-		return auth.Middleware(handler)
+		return sessionStore.Middleware(handler)
 	}
 
 	return handler

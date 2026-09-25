@@ -61,11 +61,11 @@ func Load(home string) Config {
 }
 
 // 根据 Subfolder 计算出 KasmVNC iframe 需要的路径参数
-func (c Config) VNCPath() string {
-	prefix := strings.Trim(c.Subfolder, "/")
+func (c Config) ResolvePath(path string) string {
+	prefix := strings.TrimSuffix(c.Subfolder, "/")
 	if prefix == "" {
-		return "websockify"
+		return path
 	}
 
-	return prefix + "/websockify"
+	return prefix + path
 }

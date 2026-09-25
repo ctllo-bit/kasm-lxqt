@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>KasmClient 登录</title>
+    <title>{{.Title}}</title>
     <style>
         /* ================= 基础变量定义 ================= */
         :root {
@@ -238,7 +238,7 @@
             <p>登录到您的安全工作空间</p>
         </div>
 
-        <form action="/login" method="post">
+        <form action="{{.Path}}" method="post">
             <!-- 用户名输入组 -->
             <div class="input-group">
                 <label for="username">账号</label>
