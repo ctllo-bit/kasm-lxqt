@@ -87,42 +87,7 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 		renderTemplate(w, loginTmpl, pageData{Title: cfg.Title, Path: cfg.ResolvePath("login")})
 	})
 
-	mux.HandleFunc("POST /login", func(w http.ResponseWriter, r *http.Request) {
-		username := r.FormValue("username")
-		password := r.FormValue("password")
-
-		if !authenticator.Verify(username, password) {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprintf(w, `<script>alert("用户名或密码错误");location.href=%q;</script>`, cfg.ResolvePath("login"))
-			return
-		}
-
-		raw := username + ":" + password
-		authorization := "Basic " + base64.StdEncoding.EncodeToString([]byte(raw))
-
-		sessionID, err := sessionStore.Create(authorization)
-		if err != nil {
-			http.Error(w, "failed to create session", http.StatusInternalServerError)
-			return
-		}
-
-		fmt.Println("aa:", sessionID)
-
-		cookie := &http.Cookie{
-			Name:     "kclient_session",
-			Value:    sessionID,
-			Path:     cookiePath(cfg.Subfolder),
-			HttpOnly: true,
-			Secure:   r.TLS != nil,
-		}
-
-		log.Printf("SetCookie: name=%s path=%s secure=%v r.TLS=%v",
-			cookie.Name, cookie.Path, cookie.Secure, r.TLS != nil)
-
-		http.SetCookie(w, cookie)
-
-		http.Redirect(w, r, cfg.ResolvePath("/"), http.StatusSeeOther)
-	})
+	mux.HandleFunc("POST /login", handleLogin(cfg, authenticator, sessionStore))
 
 	// ------------------------------------------------------------
 	// 首页：需要 session
@@ -133,7 +98,7 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 			http.Redirect(w, r, cfg.ResolvePath("login"), http.StatusSeeOther)
 			return
 		}
-		renderTemplate(w, indexTmpl, pageData{Title: cfg.Title, Path: cfg.ResolvePath("websockify")})
+		renderTemplate(w, indexTmpl, pageData{Title: cfg.Title, Path: strings.TrimPrefix(cfg.ResolvePath("websockify"), "/")})
 	})
 
 	// ------------------------------------------------------------
@@ -153,11 +118,46 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 	return stripBasePath(cfg.Subfolder, mux)
 }
 
-func cookiePath(subfolder string) string {
-	if subfolder == "" || subfolder == "/" {
-		return "/"
+// handleLogin 处理 POST /login：
+//   - 校验用户名密码
+//   - 创建 session
+//   - 下发 kclient_session cookie
+//   - 重定向到首页
+//
+// 失败时返回一段 alert + 跳回登录页的 HTML。
+func handleLogin(cfg config.Config, authenticator *auth.Authenticator, sessionStore *auth.SessionStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		username := r.FormValue("username")
+		password := r.FormValue("password")
+
+		if !authenticator.Verify(username, password) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprintf(w, `<script>alert("用户名或密码错误");location.href=%q;</script>`, cfg.ResolvePath("login"))
+			return
+		}
+
+		raw := username + ":" + password
+		authorization := "Basic " + base64.StdEncoding.EncodeToString([]byte(raw))
+
+		sessionID, err := sessionStore.Create(authorization)
+		if err != nil {
+			http.Error(w, "failed to create session", http.StatusInternalServerError)
+			return
+		}
+
+		cookie := &http.Cookie{
+			Name:     "kclient_session",
+			Value:    sessionID,
+			Path:     cfg.Subfolder,
+			HttpOnly: true,
+			Secure:   false, // 调试期强制 false
+		}
+
+		log.Printf("SetCookie: name=%s path=%s secure=%v r.TLS=%v", cookie.Name, cookie.Path, cookie.Secure, r.TLS != nil)
+
+		http.SetCookie(w, cookie)
+		http.Redirect(w, r, cfg.ResolvePath("/"), http.StatusSeeOther)
 	}
-	return strings.TrimSuffix(subfolder, "/")
 }
 
 // 将服务器上的文件作为 HTTP 响应返回给浏览器
