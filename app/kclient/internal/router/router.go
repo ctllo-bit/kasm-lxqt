@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"kclient/config"
+	"kclient/internal/audio"
 	"kclient/internal/auth"
 	"log"
 	"net"
@@ -23,6 +24,95 @@ import (
 type pageData struct {
 	Title string
 	Path  string
+}
+
+const kclientDir = "/var/apps/kasm-lxqt/target/kclient"
+
+func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handler {
+	// 根目录资源
+	publicDir := filepath.Join(kclientDir, "public")
+	// 加载 index.html 模板
+	indexTmpl := template.Must(template.ParseFiles(filepath.Join(publicDir, "index.html")))
+	// 加载 login.html 模板
+	loginTmpl := template.Must(template.ParseFiles(filepath.Join(publicDir, "login.html")))
+
+	sessionStore := auth.NewSessionStore()
+
+	//files := &filesHub{root: cleanRoot(cfg.FMHome), maxUploadSize: cfg.MaxUploadSize}
+	//audio := newAudioHub(cfg.Audio.Device, cfg.Audio.Server, cfg.MicSocket)
+
+	// ------------------------------------------------------------
+	// KasmVNC ReverseProxy
+	// ------------------------------------------------------------
+	vncProxy, err := newVNCProxy(cfg.VNCProxyTarget)
+	if err != nil {
+		log.Fatalf("create KasmVNC proxy: %v", err)
+	}
+
+	// ------------------------------------------------------------
+	//  HTTP 请求多路复用器(路由器)，用来根据请求的 URL 路径，分发给不同的处理函数
+	// ------------------------------------------------------------
+	mux := http.NewServeMux()
+
+	// ------------------------------------------------------------
+	// Kclient 静态资源
+	// ------------------------------------------------------------
+	mux.Handle("/public/", http.StripPrefix("/public/", http.FileServer(http.Dir(publicDir))))
+	mux.Handle("/vnc/", http.StripPrefix("/vnc", http.FileServer(http.Dir("/usr/share/kasmvnc/www/"))))
+
+	// manifest / favicon
+	mux.HandleFunc("/manifest.json", staticFile(filepath.Join(publicDir, "manifest.json"), "application/manifest+json"))
+	mux.HandleFunc("/favicon.ico", staticFile(filepath.Join(publicDir, "favicon.ico"), "image/x-icon"))
+
+	// ------------------------------------------------------------
+	// 登陆页面
+	// ------------------------------------------------------------
+	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
+		// 已登录 -> 重定向到首页
+		if _, ok := sessionStore.GetFromRequest(r); ok {
+			http.Redirect(w, r, cfg.ResolvePath("/"), http.StatusSeeOther)
+			return
+		}
+
+		renderTemplate(w, loginTmpl, pageData{Title: cfg.Title, Path: cfg.ResolvePath("/login")})
+	})
+	mux.HandleFunc("POST /login", handleLogin(cfg, authenticator, sessionStore))
+
+	// ------------------------------------------------------------
+	// 首页：需要 session
+	// ------------------------------------------------------------
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		// 未登录 -> 重定向到登陆页
+		if _, ok := sessionStore.GetFromRequest(r); !ok {
+			http.Redirect(w, r, cfg.ResolvePath("/login"), http.StatusSeeOther)
+			return
+		}
+		renderTemplate(w, indexTmpl, pageData{Title: cfg.Title, Path: cfg.VNCPath()})
+	})
+
+	// ------------------------------------------------------------
+	// KasmVNC WebSocket
+	//
+	// /websockify
+	// /websockify/*
+	// ------------------------------------------------------------
+	mux.Handle("/websockify", vncProxy)
+	mux.Handle("/websockify/", vncProxy)
+
+	// ------------------------------------------------------------
+	// Audio WebRTC
+	// ------------------------------------------------------------
+	mux.HandleFunc("POST /audio/offer", audio.HandleOffer)
+
+	// ------------------------------------------------------------
+	// Health
+	// ------------------------------------------------------------
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	return stripBasePath(cfg.Subfolder, mux)
 }
 
 // stripBasePath 把外部请求路径中的 base 前缀剥掉，再交给 next。
@@ -49,75 +139,6 @@ func stripBasePath(base string, next http.Handler) http.Handler {
 	})
 }
 
-const kclientDir = "/var/apps/kasm-lxqt/target/kclient"
-
-func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handler {
-	// 根目录资源
-	publicDir := filepath.Join(kclientDir, "public")
-	// 加载 index.html 模板
-	indexTmpl := template.Must(template.ParseFiles(filepath.Join(publicDir, "index.html")))
-	// 加载 login.html 登陆模板
-	loginTmpl := template.Must(template.ParseFiles(filepath.Join(publicDir, "login.html")))
-
-	sessionStore := auth.NewSessionStore()
-
-	// ------------------------------------------------------------
-	// KasmVNC ReverseProxy
-	// ------------------------------------------------------------
-	vncProxy, err := newVNCProxy(cfg.VNCProxyTarget)
-	if err != nil {
-		log.Fatalf("create KasmVNC proxy: %v", err)
-	}
-
-	mux := http.NewServeMux()
-	// ------------------------------------------------------------
-	// Kclient 静态资源
-	// ------------------------------------------------------------
-	mux.Handle("/public/", http.StripPrefix("/public/", http.FileServer(http.Dir(publicDir))))
-	mux.Handle("/vnc/", http.StripPrefix("/vnc", http.FileServer(http.Dir("/usr/share/kasmvnc/www/"))))
-
-	// manifest / favicon
-	mux.HandleFunc("/manifest.json", staticFile(filepath.Join(publicDir, "manifest.json"), "application/manifest+json"))
-	mux.HandleFunc("/favicon.ico", staticFile(filepath.Join(publicDir, "favicon.ico"), "image/x-icon"))
-
-	// ------------------------------------------------------------
-	// 登陆页面：不需要 session
-	// ------------------------------------------------------------
-	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
-		renderTemplate(w, loginTmpl, pageData{Title: cfg.Title, Path: cfg.ResolvePath("login")})
-	})
-
-	mux.HandleFunc("POST /login", handleLogin(cfg, authenticator, sessionStore))
-
-	// ------------------------------------------------------------
-	// 首页：需要 session
-	// ------------------------------------------------------------
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-
-		if _, ok := sessionStore.GetFromRequest(r); !ok {
-			http.Redirect(w, r, cfg.ResolvePath("login"), http.StatusSeeOther)
-			return
-		}
-		renderTemplate(w, indexTmpl, pageData{Title: cfg.Title, Path: strings.TrimPrefix(cfg.ResolvePath("websockify"), "/")})
-	})
-
-	// ------------------------------------------------------------
-	// KasmVNC WebSocket
-	//
-	// /websockify
-	// /websockify/*
-	// ------------------------------------------------------------
-	mux.Handle("/websockify", vncProxy)
-	mux.Handle("/websockify/", vncProxy)
-
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-
-	return stripBasePath(cfg.Subfolder, mux)
-}
-
 // handleLogin 处理 POST /login：
 //   - 校验用户名密码
 //   - 创建 session
@@ -132,7 +153,7 @@ func handleLogin(cfg config.Config, authenticator *auth.Authenticator, sessionSt
 
 		if !authenticator.Verify(username, password) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprintf(w, `<script>alert("用户名或密码错误");location.href=%q;</script>`, cfg.ResolvePath("login"))
+			fmt.Fprintf(w, `<script>alert("用户名或密码错误");location.href=%q;</script>`, cfg.ResolvePath("/login"))
 			return
 		}
 

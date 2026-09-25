@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -59,11 +60,20 @@ func Load(home string) Config {
 	return cfg
 }
 
-// 根据 Subfolder 计算出 KasmVNC iframe 需要的路径参数
 func (c Config) ResolvePath(path string) string {
 	if c.Subfolder == "/" {
 		return path
 	}
 
-	return c.Subfolder + "/" + path
+	return c.Subfolder + path
+}
+
+// 根据 Subfolder 计算出 KasmVNC iframe 需要的路径参数
+func (c Config) VNCPath() string {
+	prefix := strings.TrimPrefix(c.Subfolder, "/")
+	if prefix == "" {
+		return "websockify"
+	}
+
+	return prefix + "/websockify"
 }
