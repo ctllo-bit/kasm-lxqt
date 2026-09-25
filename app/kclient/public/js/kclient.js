@@ -74,25 +74,28 @@ const PCM_PLAYER_WORKLET = `
 class PCMPlayer extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.queue = [];                 // 元素为 [Float32Array(L), Float32Array(R)]
+    this.queue = [];
     this.current = null;
     this.offset = 0;
-    this.minBufferSamples = 2400;    // 50ms @48k；局域网可用，跨公网可调到 4800
-    this.port.onmessage = (ev) => {
-      this.queue.push(ev.data.channels);
-    };
+    this.minBufferSamples = 4800;    // ★ 100ms
+    this.maxBufferSamples = 48000;   // ★ 1s，超过就丢旧帧
+    this.port.onmessage = (ev) => { this.queue.push(ev.data.channels); };
   }
-
   process(inputs, outputs) {
     const out = outputs[0];
     const frames = out[0].length;
 
-    // 队列水位
     let queued = 0;
     if (this.current) queued += this.current[0].length - this.offset;
     for (let i = 0; i < this.queue.length; i++) queued += this.queue[i][0].length;
 
-    // 不足则补静音
+    // ★ 水位过高：丢最旧帧，保证延迟不无限增长
+    if (queued > this.maxBufferSamples) {
+      while (this.queue.length > 0 && queued > this.minBufferSamples) {
+        queued -= this.queue.shift()[0].length;
+      }
+    }
+
     if (queued < this.minBufferSamples) {
       for (let c = 0; c < out.length; c++) out[c].fill(0);
       return true;
@@ -115,8 +118,6 @@ class PCMPlayer extends AudioWorkletProcessor {
       this.offset += n;
       if (this.offset >= this.current[0].length) this.current = null;
     }
-
-    // 余下填静音
     for (let c = 0; c < out.length; c++) {
       if (written < frames) out[c].fill(0, written);
     }
