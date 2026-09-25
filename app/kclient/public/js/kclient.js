@@ -1,10 +1,13 @@
-// Parse messages from KasmVNC
+// ============================================================
+// KasmVNC 集成：消息监听、全屏、Toggle（保留原逻辑）
+// ============================================================
+
 var eventMethod = window.addEventListener ? "addEventListener" : "attachEvent";
 var eventer = window[eventMethod];
 var messageEvent = eventMethod == "attachEvent" ? "onmessage" : "message";
-eventer(messageEvent,function(e) {
-  if (event.data && event.data.action) {
-    switch (event.data.action) {
+eventer(messageEvent, function (e) {
+  if (e.data && e.data.action) {
+    switch (e.data.action) {
       case 'control_open':
         openToggle('#lsbar');
         break;
@@ -16,12 +19,11 @@ eventer(messageEvent,function(e) {
         break;
     }
   }
-},false);
+}, false);
 
-
-// Fullscreen handler
 function fullscreen() {
-  if (document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement || document.msFullscreenElement) {
+  if (document.fullscreenElement || document.mozFullScreenElement ||
+      document.webkitFullscreenElement || document.msFullscreenElement) {
     if (document.exitFullscreen) {
       document.exitFullscreen();
     } else if (document.mozCancelFullScreen) {
@@ -44,90 +46,6 @@ function fullscreen() {
   }
 }
 
-//// WebRTC audio (recvonly) ////
-var audioPc = null;
-var audioEl = null;
-
-async function audio() {
-  // 已开 -> 关
-  if (audioPc) {
-    audioPc.close();
-    audioPc = null;
-    if (audioEl) { audioEl.srcObject = null; audioEl = null; }
-    $('#audioButton').removeClass("icons-selected");
-    return;
-  }
-
-  $('#audioButton').addClass("icons-selected");
-
-  try {
-    const pc = new RTCPeerConnection({
-      // 跨机器时建议加 STUN；同机/同网段可留空
-      // iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    });
-    audioPc = pc;
-
-    pc.addTransceiver('audio', { direction: 'recvonly' });
-
-    pc.ontrack = (e) => {
-      audioEl = new Audio();
-      audioEl.srcObject = e.streams[0];
-      audioEl.autoplay = true;
-      audioEl.play().catch(err => console.error('audio play:', err));
-
-      // ★ 加延迟，等视频（音频超前时用）
-      const receiver = pc.getReceivers().find(r => r.track && r.track.kind === 'audio');
-      if (receiver) {
-        if ('jitterBufferTarget' in receiver) {
-          receiver.jitterBufferTarget = 120;   // 毫秒，调这个值
-        }
-        if ('playoutDelayHint' in receiver) {
-          receiver.playoutDelayHint = 0.12;   // 秒，旧 API
-        }
-      }
-    };
-
-    pc.onconnectionstatechange = () => {
-      console.log('WebRTC state:', pc.connectionState);
-      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        if (audioPc === pc) {
-          audioPc = null;
-          $('#audioButton').removeClass("icons-selected");
-        }
-      }
-    };
-
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    // 相对当前页面，最终命中 /app/kasm-lxqt/audio/offer
-    const res = await fetch('audio/offer', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/sdp' },
-      body: pc.localDescription.sdp,
-    });
-
-    if (!res.ok) {
-      throw new Error('audio/offer ' + res.status + ': ' + await res.text());
-    }
-
-    await pc.setRemoteDescription({
-      type: 'answer',
-      sdp: await res.text(),
-    });
-  } catch (err) {
-    console.error('audio error:', err);
-    if (audioPc) { audioPc.close(); audioPc = null; }
-    $('#audioButton').removeClass("icons-selected");
-  }
-}
-
-// 麦克风：后端目前没有上行 track，先禁用 ////
-function mic() {
-  console.warn('mic not implemented for WebRTC backend yet');
-}
-
-// Handle Toggle divs
 function openToggle(id) {
   if ($(id).is(":hidden")) {
     $(id).slideToggle(300);
@@ -140,4 +58,223 @@ function closeToggle(id) {
 }
 function toggle(id) {
   $(id).slideToggle(300);
+}
+
+// ============================================================
+// 音频：WebSocket + Opus + WebCodecs + AudioWorklet
+// ============================================================
+
+var audioWS = null;
+var audioCtx = null;
+var audioDecoder = null;
+var workletNode = null;
+
+// ---------- 1) AudioWorklet 处理器（内联，避免额外静态文件路由） ----------
+const PCM_PLAYER_WORKLET = `
+class PCMPlayer extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.queue = [];                 // 元素为 [Float32Array(L), Float32Array(R)]
+    this.current = null;
+    this.offset = 0;
+    this.minBufferSamples = 2400;    // 50ms @48k；局域网可用，跨公网可调到 4800
+    this.port.onmessage = (ev) => {
+      this.queue.push(ev.data.channels);
+    };
+  }
+
+  process(inputs, outputs) {
+    const out = outputs[0];
+    const frames = out[0].length;
+
+    // 队列水位
+    let queued = 0;
+    if (this.current) queued += this.current[0].length - this.offset;
+    for (let i = 0; i < this.queue.length; i++) queued += this.queue[i][0].length;
+
+    // 不足则补静音
+    if (queued < this.minBufferSamples) {
+      for (let c = 0; c < out.length; c++) out[c].fill(0);
+      return true;
+    }
+
+    let written = 0;
+    while (written < frames) {
+      if (!this.current) {
+        if (this.queue.length === 0) break;
+        this.current = this.queue.shift();
+        this.offset = 0;
+      }
+      const remaining = this.current[0].length - this.offset;
+      const n = Math.min(remaining, frames - written);
+      for (let c = 0; c < out.length; c++) {
+        const src = this.current[Math.min(c, this.current.length - 1)];
+        out[c].set(src.subarray(this.offset, this.offset + n), written);
+      }
+      written += n;
+      this.offset += n;
+      if (this.offset >= this.current[0].length) this.current = null;
+    }
+
+    // 余下填静音
+    for (let c = 0; c < out.length; c++) {
+      if (written < frames) out[c].fill(0, written);
+    }
+    return true;
+  }
+}
+registerProcessor('pcm-player', PCMPlayer);
+`;
+
+// ---------- 2) URL 构造：兼容 / 与 /app/kasm-lxqt/ 两种页面路径 ----------
+function buildAudioWSURL() {
+  let base = window.location.pathname || '/';
+  // 结尾不是 '/' 就去掉最后一段，补 '/'
+  if (!base.endsWith('/')) {
+    base = base.replace(/\/[^/]*$/, '/');
+  }
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return proto + '//' + window.location.host + base + 'audio/ws';
+}
+
+// ---------- 3) 初始化 / 销毁 音频管线 ----------
+async function ensureAudioPipeline() {
+  if (audioDecoder) return;
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)({
+    sampleRate: 48000,
+  });
+  if (audioCtx.state === 'suspended') {
+    await audioCtx.resume();
+  }
+
+  const blob = new Blob([PCM_PLAYER_WORKLET], { type: 'application/javascript' });
+  const url = URL.createObjectURL(blob);
+  await audioCtx.audioWorklet.addModule(url);
+  URL.revokeObjectURL(url);
+
+  workletNode = new AudioWorkletNode(audioCtx, 'pcm-player', {
+    numberOfInputs: 0,
+    numberOfOutputs: 1,
+    outputChannelCount: [2],
+  });
+  workletNode.connect(audioCtx.destination);
+
+  audioDecoder = new AudioDecoder({
+    output: (audioData) => {
+      const ch = audioData.numberOfChannels;
+      const frames = audioData.numberOfFrames;
+      const planes = [];
+      for (let c = 0; c < ch; c++) {
+        const buf = new Float32Array(frames);
+        audioData.copyTo(buf, { planeIndex: c, format: 'f32-planar' });
+        planes.push(buf);
+      }
+      if (workletNode) {
+        workletNode.port.postMessage({ channels: planes });
+      }
+      audioData.close();
+    },
+    error: (e) => console.error('AudioDecoder error:', e),
+  });
+
+  audioDecoder.configure({
+    codec: 'opus',
+    sampleRate: 48000,
+    numberOfChannels: 2,
+  });
+}
+
+function destroyAudioPipeline() {
+  if (audioDecoder) { try { audioDecoder.close(); } catch (e) {} audioDecoder = null; }
+  if (workletNode) { try { workletNode.disconnect(); } catch (e) {} workletNode = null; }
+  if (audioCtx) { try { audioCtx.close(); } catch (e) {} audioCtx = null; }
+}
+
+// ---------- 4) 音频按钮 ----------
+async function audio() {
+  // 已开 → 关
+  if (audioWS) {
+    try { audioWS.send(JSON.stringify({ type: 'close' })); } catch (e) {}
+    try { audioWS.close(); } catch (e) {}
+    audioWS = null;
+    destroyAudioPipeline();
+    $('#audioButton').removeClass("icons-selected");
+    return;
+  }
+
+  $('#audioButton').addClass("icons-selected");
+
+  try {
+    if (typeof AudioDecoder === 'undefined') {
+      throw new Error('当前浏览器不支持 WebCodecs (AudioDecoder)，请使用 Chrome/Edge 94+ 或 Safari 16.4+');
+    }
+
+    await ensureAudioPipeline();
+
+    const wsUrl = buildAudioWSURL();
+    console.log('audio ws url =', wsUrl);
+
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+    audioWS = ws;
+
+    let baseTs = null;
+    let recvSeq = 0;
+
+    ws.onopen = () => {
+      // 兼容旧协议：主动通知后端开始推流（后端如果是一连接就推，这条消息会被忽略）
+      try { ws.send(JSON.stringify({ type: 'open' })); } catch (e) {}
+    };
+
+    ws.onmessage = (ev) => {
+      const buf = ev.data;
+      if (!(buf instanceof ArrayBuffer) || buf.byteLength <= 12) return;
+
+      const dv = new DataView(buf);
+      const seq = dv.getUint32(0, false);              // big-endian
+      const tsMs = Number(dv.getBigUint64(4, false));  // big-endian
+      if (baseTs === null) baseTs = tsMs;
+
+      if (recvSeq !== 0 && seq !== recvSeq) {
+        console.warn('audio gap: expect', recvSeq, 'got', seq);
+      }
+      recvSeq = seq + 1;
+
+      const opusData = new Uint8Array(buf, 12);
+      try {
+        audioDecoder.decode(new EncodedAudioChunk({
+          type: 'key',
+          timestamp: (tsMs - baseTs) * 1000, // 微秒
+          duration: 20000,                    // 20ms
+          data: opusData,
+        }));
+      } catch (e) {
+        console.error('decode enqueue:', e);
+      }
+    };
+
+    ws.onerror = (e) => console.error('audio ws error:', e);
+
+    ws.onclose = () => {
+      console.log('audio ws closed');
+      if (audioWS === ws) {
+        audioWS = null;
+        destroyAudioPipeline();
+        $('#audioButton').removeClass("icons-selected");
+      }
+    };
+  } catch (err) {
+    console.error('audio error:', err);
+    if (audioWS) { try { audioWS.close(); } catch (e) {} audioWS = null; }
+    destroyAudioPipeline();
+    $('#audioButton').removeClass("icons-selected");
+  }
+}
+
+// ============================================================
+// 麦克风：暂不启用（后端目前只做下行）
+// ============================================================
+function mic() {
+  console.warn('mic not implemented yet');
 }

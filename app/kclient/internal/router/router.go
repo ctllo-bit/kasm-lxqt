@@ -100,9 +100,9 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 	mux.Handle("/websockify/", vncProxy)
 
 	// ------------------------------------------------------------
-	// Audio WebRTC
+	// Audio WebSocket (Opus)
 	// ------------------------------------------------------------
-	mux.HandleFunc("POST /audio/offer", audio.HandleOffer)
+	mux.HandleFunc("/audio/ws", audio.HandleWS)
 
 	// ------------------------------------------------------------
 	// Health
