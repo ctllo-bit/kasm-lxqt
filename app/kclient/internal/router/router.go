@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"html/template"
 	"kclient/config"
-	"kclient/internal/audio"
 	"kclient/internal/auth"
 	"log"
 	"net"
@@ -26,6 +25,30 @@ type pageData struct {
 	Path  string
 }
 
+// stripBasePath 把外部请求路径中的 base 前缀剥掉，再交给 next。
+func stripBasePath(base string, next http.Handler) http.Handler {
+	base = strings.TrimSuffix(base, "/") //规范化 base，TrimSuffix 去掉末尾的 /
+	if base == "" {
+		return next //根路径模式下，请求原样交给 mux，不需要剥离。
+	}
+
+	//把请求路径去掉 base 前缀，再交给 next
+	stripped := http.StripPrefix(base, next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { //返回一个 HandlerFunc
+		// 无尾斜杠重定向
+		if r.URL.Path == base {
+			http.Redirect(w, r, base+"/", http.StatusTemporaryRedirect)
+			return
+		}
+		// 边界检查,要求路径必须以 base + "/" 开头：
+		if !strings.HasPrefix(r.URL.Path, base+"/") {
+			http.NotFound(w, r)
+			return
+		}
+		stripped.ServeHTTP(w, r) // 剥离后交给内层
+	})
+}
+
 const kclientDir = "/var/apps/kasm-lxqt/target/kclient"
 
 func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handler {
@@ -38,9 +61,6 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 
 	sessionStore := auth.NewSessionStore()
 
-	//files := &filesHub{root: cleanRoot(cfg.FMHome), maxUploadSize: cfg.MaxUploadSize}
-	//audio := newAudioHub(cfg.Audio.Device, cfg.Audio.Server, cfg.MicSocket)
-
 	// ------------------------------------------------------------
 	// KasmVNC ReverseProxy
 	// ------------------------------------------------------------
@@ -49,16 +69,11 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 		log.Fatalf("create KasmVNC proxy: %v", err)
 	}
 
-	// ------------------------------------------------------------
-	//  HTTP 请求多路复用器(路由器)，用来根据请求的 URL 路径，分发给不同的处理函数
-	// ------------------------------------------------------------
 	mux := http.NewServeMux()
-
 	// ------------------------------------------------------------
 	// Kclient 静态资源
 	// ------------------------------------------------------------
-	kclientStatic := http.FileServer(http.Dir(publicDir))
-	mux.Handle("/public/", http.StripPrefix("/public/", kclientStatic))
+	mux.Handle("/public/", http.StripPrefix("/public/", http.FileServer(http.Dir(publicDir))))
 	mux.Handle("/vnc/", http.StripPrefix("/vnc", http.FileServer(http.Dir("/usr/share/kasmvnc/www/"))))
 
 	// manifest / favicon
@@ -72,55 +87,42 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 		renderTemplate(w, loginTmpl, pageData{Title: cfg.Title, Path: cfg.ResolvePath("login")})
 	})
 
-	mux.HandleFunc("POST /login",
-		func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /login", func(w http.ResponseWriter, r *http.Request) {
+		username := r.FormValue("username")
+		password := r.FormValue("password")
 
-			username := r.FormValue("username")
-			password := r.FormValue("password")
+		if !authenticator.Verify(username, password) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprintf(w, `<script>alert("用户名或密码错误");location.href=%q;</script>`, cfg.ResolvePath("login"))
+			return
+		}
 
-			// 验证 .kasmpasswd
-			if !authenticator.Verify(username, password) {
-				http.Error(
-					w,
-					"用户名或密码错误",
-					http.StatusUnauthorized,
-				)
-				return
-			}
+		raw := username + ":" + password
+		authorization := "Basic " + base64.StdEncoding.EncodeToString([]byte(raw))
 
-			// 生成 Authorization: Basic xxx
-			raw := username + ":" + password
+		sessionID, err := sessionStore.Create(authorization)
+		if err != nil {
+			http.Error(w, "failed to create session", http.StatusInternalServerError)
+			return
+		}
 
-			authorization := "Basic " +
-				base64.StdEncoding.EncodeToString(
-					[]byte(raw),
-				)
+		fmt.Println("aa:", sessionID)
 
-			// 创建 Session
-			sessionID, err := sessionStore.Create(authorization)
-			if err != nil {
-				http.Error(
-					w,
-					"failed to create session",
-					http.StatusInternalServerError,
-				)
-				return
-			}
+		cookie := &http.Cookie{
+			Name:     "kclient_session",
+			Value:    sessionID,
+			Path:     cookiePath(cfg.Subfolder),
+			HttpOnly: true,
+			Secure:   r.TLS != nil,
+		}
 
-			// 保存 Session Cookie
-			http.SetCookie(w, &http.Cookie{
-				Name:     "kclient_session",
-				Value:    sessionID,
-				Path:     "/",
-				HttpOnly: true,
-				Secure:   true,
-				SameSite: http.SameSiteLaxMode,
-			})
+		log.Printf("SetCookie: name=%s path=%s secure=%v r.TLS=%v",
+			cookie.Name, cookie.Path, cookie.Secure, r.TLS != nil)
 
-			// 登录成功
-			http.Redirect(w, r, "/", http.StatusSeeOther)
-		},
-	)
+		http.SetCookie(w, cookie)
+
+		http.Redirect(w, r, cfg.ResolvePath("/"), http.StatusSeeOther)
+	})
 
 	// ------------------------------------------------------------
 	// 首页：需要 session
@@ -143,66 +145,39 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 	mux.Handle("/websockify", vncProxy)
 	mux.Handle("/websockify/", vncProxy)
 
-	// ------------------------------------------------------------
-	// Audio WebRTC
-	// ------------------------------------------------------------
-	mux.HandleFunc("POST /audio/offer", audio.HandleOffer)
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
 
-	// ------------------------------------------------------------
-	// Health
-	// ------------------------------------------------------------
-
-	mux.HandleFunc("GET /healthz",
-		func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("ok"))
-		},
-	)
-
-	// ------------------------------------------------------------
-	// Debug
-	// ------------------------------------------------------------
-
-	mux.HandleFunc("/__debug_unmatched__",
-		func(w http.ResponseWriter, r *http.Request) {
-			log.Printf("UNMATCHED DEBUG PATH=%s Host=%s Remote=%s", r.URL.Path, r.Host, r.RemoteAddr)
-
-			http.NotFound(w, r)
-		},
-	)
-
-	// 先挂载二级路径
-	handler := mount(cfg.Subfolder, mux)
-
-	// 根据配置决定是否启用浏览器认证,最外层加认证
-	if cfg.Mode == "port" {
-		return sessionStore.Middleware(handler)
-	}
-
-	return handler
+	return stripBasePath(cfg.Subfolder, mux)
 }
 
-// 给整个 HTTP 服务挂载一个访问前缀
-func mount(subfolder string, handler http.Handler) http.Handler {
-	if subfolder == "/" || subfolder == "" {
-		return handler
+func cookiePath(subfolder string) string {
+	if subfolder == "" || subfolder == "/" {
+		return "/"
 	}
+	return strings.TrimSuffix(subfolder, "/")
+}
 
-	// 去掉最后的 /
-	prefix := strings.TrimSuffix(subfolder, "/")
+// 将服务器上的文件作为 HTTP 响应返回给浏览器
+func staticFile(path, contentType string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		http.ServeFile(w, r, path)
+	}
+}
 
-	// 创建一个新的外层路由
-	mux := http.NewServeMux()
-	// 接收二级路径，然后剥离掉这个前缀，再把剩余路径交给原来的 handler
-	mux.Handle(prefix+"/", http.StripPrefix(prefix, handler))
-
-	mux.HandleFunc(prefix,
-		func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, prefix+"/", http.StatusMovedPermanently)
-		},
-	)
-
-	return mux
+// 模板渲染完整 HTML，成功发给浏览器，失败返回 500
+func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data pageData) {
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	buf.WriteTo(w)
 }
 
 // New 构造一个反向代理 handler，把请求（含 WebSocket）透传到 target。
@@ -236,26 +211,6 @@ func newVNCProxy(target string) (http.Handler, error) {
 	}
 
 	return proxy, nil
-}
-
-// 将服务器上的文件作为 HTTP 响应返回给浏览器
-func staticFile(path, contentType string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("Cache-Control", "public, max-age=86400")
-		http.ServeFile(w, r, path)
-	}
-}
-
-// 模板渲染完整 HTML，成功发给浏览器，失败返回 500
-func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data pageData) {
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	buf.WriteTo(w)
 }
 
 // 初始化创建 Listener
@@ -314,5 +269,4 @@ func CreateListener(cfg config.Config) (net.Listener, error) {
 	default:
 		return nil, fmt.Errorf("invalid mode %q, expected gateway or port", cfg.Mode)
 	}
-
 }
