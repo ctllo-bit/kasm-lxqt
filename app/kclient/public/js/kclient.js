@@ -75,16 +75,14 @@ async function audio() {
       audioEl.autoplay = true;
       audioEl.play().catch(err => console.error('audio play:', err));
 
-      // ★ 尽量压低 jitter buffer
-      const receiver = pc.getReceivers().find(r => r.track.kind === 'audio');
+      // ★ 加延迟，等视频（音频超前时用）
+      const receiver = pc.getReceivers().find(r => r.track && r.track.kind === 'audio');
       if (receiver) {
-        // 新版 Chrome/Edge
         if ('jitterBufferTarget' in receiver) {
-          receiver.jitterBufferTarget = 0;  // 毫秒，0=最小
+          receiver.jitterBufferTarget = 120;   // 毫秒，调这个值
         }
-        // 旧版 API
         if ('playoutDelayHint' in receiver) {
-          receiver.playoutDelayHint = 0;
+          receiver.playoutDelayHint = 0.12;   // 秒，旧 API
         }
       }
     };
