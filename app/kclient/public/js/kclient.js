@@ -24,6 +24,16 @@ eventer(messageEvent,function(e) {
   }
 },false);
 
+// Fullscreen handler
+function fullscreen() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  } else {
+    document.documentElement.requestFullscreen();
+  }
+}
+
+
 //// PCM player ////
 var buffer = [];
 var playing = false;
@@ -94,31 +104,6 @@ PCM.prototype.destroy = function() {
   this.audioCtx = null;
 };
 
-
-// Fullscreen handler
-function fullscreen() {
-  if (document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement || document.msFullscreenElement) {
-    if (document.exitFullscreen) {
-      document.exitFullscreen();
-    } else if (document.mozCancelFullScreen) {
-      document.mozCancelFullScreen();
-    } else if (document.webkitExitFullscreen) {
-      document.webkitExitFullscreen();
-    } else if (document.msExitFullscreen) {
-      document.msExitFullscreen();
-    }
-  } else {
-    if (document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen();
-    } else if (document.documentElement.mozRequestFullScreen) {
-      document.documentElement.mozRequestFullScreen();
-    } else if (document.documentElement.webkitRequestFullscreen) {
-      document.documentElement.webkitRequestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
-    } else if (document.body.msRequestFullscreen) {
-      document.body.msRequestFullscreen();
-    }
-  }
-}
 
 // Websocket comms for audio
 var host = window.location.hostname;
