@@ -163,10 +163,10 @@ func withAuth(s *auth.SessionStore, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess, ok := s.GetFromRequest(r)
 		if !ok {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			// WebSocket 端点：用 401，由前端 JS 处理跳转
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		// ★ sess.Authorization 这个字段名要看你 Session 结构体的定义
 		r.Header.Set("Authorization", sess.Authorization)
 		next.ServeHTTP(w, r)
 	})
