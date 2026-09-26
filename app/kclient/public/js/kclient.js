@@ -28,17 +28,14 @@ eventer(messageEvent,function(e) {
 //// Fullscreen + KasmVNC Resolution ////
 
 function sendVncMessage(message) {
-  var frame = document.querySelector('iframe.vnc');
-
+  // jQuery 选择器获取第一个匹配的 iframe
+  var frame = $('iframe.vnc')[0];
   if (!frame || !frame.contentWindow) {
     console.warn('KasmVNC iframe not found');
     return false;
   }
 
-  console.log('KasmVNC message:', message);
-
   frame.contentWindow.postMessage(message, '*');
-
   return true;
 }
 
@@ -63,6 +60,15 @@ function fullscreen() {
     document.documentElement.requestFullscreen();
   }
 }
+
+// 点击退出 / ESC / 浏览器退出 Fullscreen
+document.addEventListener('fullscreenchange', function () {
+  var isFullscreen = document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+
+  if (!isFullscreen) {
+    sendVncMessage({action: 'resize',value: 'remote'});
+  }
+});
 
 
 //// PCM player ////
