@@ -95,8 +95,9 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 	// /websockify
 	// /websockify/*
 	// ------------------------------------------------------------
-	mux.Handle("/websockify", withAuth(sessionStore, vncProxy))
-	mux.Handle("/websockify/", withAuth(sessionStore, vncProxy))
+	loginPath := cfg.ResolvePath("/login")
+	mux.Handle("/websockify", withAuth(sessionStore, loginPath, vncProxy))
+	mux.Handle("/websockify/", withAuth(sessionStore, loginPath, vncProxy))
 
 	// ------------------------------------------------------------
 	// Audio WebSocket (Opus)
@@ -159,12 +160,11 @@ func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data pageDat
 }
 
 // withAuth 包装 handler，从 session 注入 Authorization 并透传给下游
-func withAuth(s *auth.SessionStore, next http.Handler) http.Handler {
+func withAuth(s *auth.SessionStore, loginPath string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess, ok := s.GetFromRequest(r)
 		if !ok {
-			// WebSocket 端点：用 401，由前端 JS 处理跳转
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			http.Redirect(w, r, loginPath, http.StatusSeeOther)
 			return
 		}
 		r.Header.Set("Authorization", sess.Authorization)

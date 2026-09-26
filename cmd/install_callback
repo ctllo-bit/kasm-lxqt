@@ -167,9 +167,9 @@ EOF
 
 # 创建 kclient 配置文件 gateway 或 port
 cat > "${REMOTE_HOME}/.vnc/kclient.yaml" <<EOF
-mode: gateway
+mode: port
 
-subfolder: "/app/kasm-lxqt"
+subfolder: "/"
 title: "KasmVNC Client"
 
 proxy_target: "https://127.0.0.1:6901"
