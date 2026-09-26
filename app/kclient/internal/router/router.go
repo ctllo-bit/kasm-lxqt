@@ -97,7 +97,7 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 	// /websockify
 	// /websockify/*
 	// ------------------------------------------------------------
-	authProxy := newVNCHandler(sessionStore, loginPath, vncProxy)
+	authProxy := withSessionAuth(sessionStore, loginPath, vncProxy)
 	mux.Handle("/websockify", authProxy)
 	mux.Handle("/websockify/", authProxy)
 
@@ -162,7 +162,7 @@ func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data pageDat
 }
 
 // 创建一个带 Session 鉴权的 KasmVNC 代理，从 session 注入 Authorization 并透传给下游
-func newVNCHandler(s *auth.SessionStore, loginPath string, next http.Handler) http.Handler {
+func withSessionAuth(s *auth.SessionStore, loginPath string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess, ok := s.GetFromRequest(r)
 		if !ok {
