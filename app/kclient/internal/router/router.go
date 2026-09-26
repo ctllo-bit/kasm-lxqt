@@ -27,7 +27,7 @@ type pageData struct {
 
 const kclientDir = "/var/apps/kasm-lxqt/target/kclient"
 
-func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handler {
+func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Handler, error) {
 	// 根目录资源
 	publicDir := filepath.Join(kclientDir, "public")
 	// 加载 index.html 模板
@@ -47,7 +47,7 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 	// ------------------------------------------------------------
 	vncProxy, err := newVNCProxy(cfg.VNCProxyTarget)
 	if err != nil {
-		log.Fatalf("create KasmVNC proxy: %v", err)
+		return nil, fmt.Errorf("create KasmVNC proxy: %w", err)
 	}
 
 	// ------------------------------------------------------------
@@ -114,7 +114,7 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	return stripBasePath(cfg.Subfolder, mux)
+	return stripBasePath(cfg.Subfolder, mux), nil
 }
 
 // stripBasePath 把外部请求路径中的 base 前缀剥掉，再交给 next。
@@ -164,13 +164,13 @@ func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data pageDat
 // 创建一个带 Session 鉴权的 KasmVNC 代理，从 session 注入 Authorization 并透传给下游
 func withSessionAuth(s *auth.SessionStore, loginPath string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sess, ok := s.GetFromRequest(r)
-		if !ok {
-			http.Redirect(w, r, loginPath, http.StatusSeeOther)
+		if sess, ok := s.GetFromRequest(r); ok {
+			r.Header.Set("Authorization", sess.Authorization)
+			next.ServeHTTP(w, r)
 			return
 		}
-		r.Header.Set("Authorization", sess.Authorization)
-		next.ServeHTTP(w, r)
+
+		http.Redirect(w, r, loginPath, http.StatusSeeOther)
 	})
 }
 

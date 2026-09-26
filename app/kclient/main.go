@@ -36,19 +36,25 @@ func run() error {
 		return fmt.Errorf("load auth: %w", err)
 	}
 
-	// 配置 HTTP Server（增加 ReadTimeout / WriteTimeout 防止慢速连接攻击）
-	server := &http.Server{
-		Handler:           router.NewHandler(cfg, vncAuth),
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       120 * time.Second,
+	// 创建 Handler
+	handler, err := router.NewHandler(cfg, vncAuth)
+	if err != nil {
+		return fmt.Errorf("create handler: %w", err)
 	}
 
 	// 创建 Listener
 	listener, err := router.CreateListener(cfg)
 	if err != nil {
 		return fmt.Errorf("create listener: %w", err)
+	}
+
+	// 配置 HTTP Server（增加 ReadTimeout / WriteTimeout 防止慢速连接攻击）
+	server := &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// 确保 Unix Socket 文件在退出时被清理

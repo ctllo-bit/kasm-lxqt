@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"kclient/config"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -20,13 +19,7 @@ type Authenticator struct {
 	Hash string
 }
 
-// handleLogin 处理 POST /login：
-//   - 校验用户名密码
-//   - 创建 session
-//   - 下发 kclient_session cookie
-//   - 重定向到首页
-//
-// 失败时返回一段 alert + 跳回登录页的 HTML。
+// handleLogin 处理 POST /login
 func LoginHandler(cfg config.Config, authenticator *Authenticator, sessionStore *SessionStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		username := r.FormValue("username")
@@ -55,13 +48,12 @@ func LoginHandler(cfg config.Config, authenticator *Authenticator, sessionStore 
 			Value:    sessionID,
 			Path:     cfg.Subfolder,
 			HttpOnly: true,
-			Secure:   false, // 调试期强制 false
+			Secure:   true,
 			SameSite: http.SameSiteLaxMode,
+			MaxAge:   int(sessionTTL.Seconds()),
 		}
-
-		log.Printf("SetCookie: name=%s path=%s secure=%v r.TLS=%v", cookie.Name, cookie.Path, cookie.Secure, r.TLS != nil)
-
 		http.SetCookie(w, cookie)
+
 		// 登录成功，重定项主页
 		http.Redirect(w, r, cfg.ResolvePath("/"), http.StatusSeeOther)
 	}
@@ -77,6 +69,9 @@ func Load(path string) (*Authenticator, error) {
 
 	scanner := bufio.NewScanner(f)
 	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return nil, fmt.Errorf("read kasmpasswd: %w", err)
+		}
 		return nil, errors.New("empty kasmpasswd file")
 	}
 
