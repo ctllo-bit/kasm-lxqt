@@ -20,7 +20,7 @@ type SessionStore struct {
 
 const (
 	sessionCookieName = "kclient_session"
-	sessionTTL        = 24 * time.Hour
+	sessionTTL        = 5 * time.Minute
 )
 
 func NewSessionStore() *SessionStore {
