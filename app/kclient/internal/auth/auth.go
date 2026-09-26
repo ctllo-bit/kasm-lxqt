@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"kclient/config"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -17,66 +20,50 @@ type Authenticator struct {
 	Hash string
 }
 
-func (a *Authenticator) Login(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	username := r.FormValue("username")
-	password := r.FormValue("password")
-
-	if !a.Verify(username, password) {
-		http.Error(w, "用户名或密码错误", http.StatusUnauthorized)
-		return
-	}
-
-	// 登录成功
-	// 后面创建 session
-}
-
-func LoginHandler(a *Authenticator, store *SessionStore) http.HandlerFunc {
-
+// handleLogin 处理 POST /login：
+//   - 校验用户名密码
+//   - 创建 session
+//   - 下发 kclient_session cookie
+//   - 重定向到首页
+//
+// 失败时返回一段 alert + 跳回登录页的 HTML。
+func LoginHandler(cfg config.Config, authenticator *Authenticator, sessionStore *SessionStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
 		username := r.FormValue("username")
 		password := r.FormValue("password")
 
 		// 验证 .kasmpasswd
-		if !a.Verify(username, password) {
-			http.Error(w, "用户名或密码错误", http.StatusUnauthorized)
+		if !authenticator.Verify(username, password) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprintf(w, `<script>alert("用户名或密码错误");location.href=%q;</script>`, cfg.ResolvePath("/login"))
 			return
 		}
 
 		// 生成 Basic Auth
 		raw := username + ":" + password
-
-		authorization := "Basic " +
-			base64.StdEncoding.EncodeToString([]byte(raw))
+		authorization := "Basic " + base64.StdEncoding.EncodeToString([]byte(raw))
 
 		// 创建 session
-		sessionID, err := store.Create(authorization)
+		sessionID, err := sessionStore.Create(authorization)
 		if err != nil {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			http.Error(w, "failed to create session", http.StatusInternalServerError)
 			return
 		}
 
-		http.SetCookie(w, &http.Cookie{
+		cookie := &http.Cookie{
 			Name:     "kclient_session",
 			Value:    sessionID,
-			Path:     "/",
+			Path:     cfg.Subfolder,
 			HttpOnly: true,
-			Secure:   true,
+			Secure:   false, // 调试期强制 false
 			SameSite: http.SameSiteLaxMode,
-		})
+		}
 
-		// 登录成功
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		log.Printf("SetCookie: name=%s path=%s secure=%v r.TLS=%v", cookie.Name, cookie.Path, cookie.Secure, r.TLS != nil)
+
+		http.SetCookie(w, cookie)
+		// 登录成功，重定项主页
+		http.Redirect(w, r, cfg.ResolvePath("/"), http.StatusSeeOther)
 	}
 }
 
