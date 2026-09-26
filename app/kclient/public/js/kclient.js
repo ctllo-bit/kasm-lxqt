@@ -18,7 +18,7 @@ eventer(messageEvent,function(e) {
         }
         break;
       case 'fullscreen':
-        fullscreen();
+        toggleFullscreen();
         break;
     }
   }
@@ -26,7 +26,6 @@ eventer(messageEvent,function(e) {
 
 
 //// Fullscreen + KasmVNC Resolution ////
-
 function sendVncMessage(message) {
   // jQuery 选择器获取第一个匹配的 iframe
   var frame = $('iframe.vnc')[0];
@@ -40,12 +39,9 @@ function sendVncMessage(message) {
 }
 
 // Fullscreen handler
-function fullscreen() {
+function toggleFullscreen() {
   if (document.fullscreenElement) {
     document.exitFullscreen();
-
-    // 退出全屏后，恢复 KasmVNC 原本的远程自适应缩放模式
-    sendVncMessage({action: 'resize',value: 'remote'});
   } else {
     // 进入全屏前，设置 KasmVNC 1920x1080
     // 原始模式是 remote，进入全屏后必须先切到 scale，
@@ -53,8 +49,8 @@ function fullscreen() {
     sendVncMessage({action: 'resize',value: 'scale'});
 
     // 使用 KasmVNC 自己的 set_resolution
-    let realWidth =screen.width * window.devicePixelRatio;
-    let realHeight =screen.height * window.devicePixelRatio;
+    let realWidth  = Math.round(screen.width  * window.devicePixelRatio);
+    let realHeight = Math.round(screen.height * window.devicePixelRatio);
     sendVncMessage({action: 'set_resolution',value_x: realWidth,value_y: realHeight});
 
     document.documentElement.requestFullscreen();
@@ -63,13 +59,17 @@ function fullscreen() {
 
 // 点击退出 / ESC / 浏览器退出 Fullscreen
 document.addEventListener('fullscreenchange', function () {
-  var isFullscreen = document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+  var isFullscreen = 
+    document.fullscreenElement || 
+    document.mozFullScreenElement || 
+    document.webkitFullscreenElement || 
+    document.msFullscreenElement;
 
   if (!isFullscreen) {
+    // 退出全屏后，恢复 KasmVNC 原本的远程自适应缩放模式
     sendVncMessage({action: 'resize',value: 'remote'});
   }
 });
-
 
 //// PCM player ////
 var buffer = [];
