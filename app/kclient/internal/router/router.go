@@ -37,6 +37,8 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 
 	sessionStore := auth.NewSessionStore()
 
+	loginPath := cfg.ResolvePath("/login")
+
 	//files := &filesHub{root: cleanRoot(cfg.FMHome), maxUploadSize: cfg.MaxUploadSize}
 	//audio := newAudioHub(cfg.Audio.Device, cfg.Audio.Server, cfg.MicSocket)
 
@@ -73,7 +75,7 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 			return
 		}
 
-		renderTemplate(w, loginTmpl, pageData{Title: cfg.Title, Path: cfg.ResolvePath("/login")})
+		renderTemplate(w, loginTmpl, pageData{Title: cfg.Title, Path: loginPath})
 	})
 	mux.HandleFunc("POST /login", auth.LoginHandler(cfg, authenticator, sessionStore))
 
@@ -83,7 +85,7 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		// 未登录 -> 重定向到登陆页
 		if _, ok := sessionStore.GetFromRequest(r); !ok {
-			http.Redirect(w, r, cfg.ResolvePath("/login"), http.StatusSeeOther)
+			http.Redirect(w, r, loginPath, http.StatusSeeOther)
 			return
 		}
 		renderTemplate(w, indexTmpl, pageData{Title: cfg.Title, Path: cfg.VNCPath()})
@@ -95,9 +97,9 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 	// /websockify
 	// /websockify/*
 	// ------------------------------------------------------------
-	loginPath := cfg.ResolvePath("/login")
-	mux.Handle("/websockify", withAuth(sessionStore, loginPath, vncProxy))
-	mux.Handle("/websockify/", withAuth(sessionStore, loginPath, vncProxy))
+	authProxy := newVNCHandler(sessionStore, loginPath, vncProxy)
+	mux.Handle("/websockify", authProxy)
+	mux.Handle("/websockify/", authProxy)
 
 	// ------------------------------------------------------------
 	// Audio WebSocket (Opus)
@@ -159,8 +161,8 @@ func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data pageDat
 	buf.WriteTo(w)
 }
 
-// withAuth 包装 handler，从 session 注入 Authorization 并透传给下游
-func withAuth(s *auth.SessionStore, loginPath string, next http.Handler) http.Handler {
+// 创建一个带 Session 鉴权的 KasmVNC 代理，从 session 注入 Authorization 并透传给下游
+func newVNCHandler(s *auth.SessionStore, loginPath string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess, ok := s.GetFromRequest(r)
 		if !ok {
