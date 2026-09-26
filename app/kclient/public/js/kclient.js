@@ -1,15 +1,21 @@
 // Parse messages from KasmVNC
+// 兼容旧浏览器：现代浏览器用 addEventListener，IE8 及以下用 attachEvent
 var eventMethod = window.addEventListener ? "addEventListener" : "attachEvent";
 var eventer = window[eventMethod];
 var messageEvent = eventMethod == "attachEvent" ? "onmessage" : "message";
 eventer(messageEvent,function(e) {
   if (event.data && event.data.action) {
+    var $lsbar=$('#lsbar')
     switch (event.data.action) {
       case 'control_open':
-        openToggle('#lsbar');
+        if ($lsbar.is(":hidden")) {
+          $lsbar.slideToggle(300);
+        }
         break;
       case 'control_close':
-        closeToggle('#lsbar');
+        if ($lsbar.is(":visible")) {
+          $lsbar.slideToggle(300);
+        }
         break;
       case 'fullscreen':
         fullscreen();
@@ -88,20 +94,6 @@ PCM.prototype.destroy = function() {
   this.audioCtx = null;
 };
 
-// Handle Toggle divs
-function openToggle(id) {
-  if ($(id).is(":hidden")) {
-    $(id).slideToggle(300);
-  }
-}
-function closeToggle(id) {
-  if ($(id).is(":visible")) {
-    $(id).slideToggle(300);
-  }
-}
-function toggle(id) {
-  $(id).slideToggle(300);
-}
 
 // Fullscreen handler
 function fullscreen() {
