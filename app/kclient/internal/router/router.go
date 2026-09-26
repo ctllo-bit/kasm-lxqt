@@ -95,8 +95,8 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) http.Handl
 	// /websockify
 	// /websockify/*
 	// ------------------------------------------------------------
-	mux.Handle("/websockify", vncProxy)
-	mux.Handle("/websockify/", vncProxy)
+	mux.Handle("/websockify", withAuth(sessionStore, vncProxy))
+	mux.Handle("/websockify/", withAuth(sessionStore, vncProxy))
 
 	// ------------------------------------------------------------
 	// Audio WebSocket (Opus)
@@ -156,6 +156,20 @@ func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data pageDat
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	buf.WriteTo(w)
+}
+
+// withAuth 包装 handler，从 session 注入 Authorization 并透传给下游
+func withAuth(s *auth.SessionStore, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sess, ok := s.GetFromRequest(r)
+		if !ok {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		// ★ sess.Authorization 这个字段名要看你 Session 结构体的定义
+		r.Header.Set("Authorization", sess.Authorization)
+		next.ServeHTTP(w, r)
+	})
 }
 
 // New 构造一个反向代理 handler，把请求（含 WebSocket）透传到 target。

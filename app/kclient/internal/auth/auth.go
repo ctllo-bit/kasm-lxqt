@@ -100,24 +100,3 @@ func (a *Authenticator) Verify(user, pass string) bool {
 	c := sha256_crypt.New()
 	return c.Verify(a.Hash, []byte(pass)) == nil
 }
-
-// Session Middleware 用 KasmVNC 的密码哈希校验，通过后 Authorization 透传给代理
-func (s *SessionStore) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
-		// 登录页面和登录接口不需要认证
-		if r.URL.Path == "/login" {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		_, ok := s.GetFromRequest(r)
-
-		if !ok {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}

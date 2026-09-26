@@ -6,7 +6,7 @@ log_msg() {
 }
 
 # KasmVNC自己认证 或 外层 kclient / 网关负责
-KASMVNC_AUTH_ENABLED=false
+KASMVNC_AUTH_ENABLED=true
 
 # 安装KasmVNC
 sudo apt install -y /var/apps/kasm-lxqt/target/server/kasmvncserver_bookworm_*.deb
