@@ -48,7 +48,7 @@ func LoginHandler(cfg config.Config, authenticator *Authenticator, sessionStore 
 			Value:    sessionID,
 			Path:     cfg.Subfolder,
 			HttpOnly: true,
-			Secure:   true,
+			Secure:   cfg.Mode == "port",
 			SameSite: http.SameSiteLaxMode,
 			MaxAge:   int(sessionTTL.Seconds()),
 		}
