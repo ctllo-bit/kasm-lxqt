@@ -18,6 +18,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	socketio "github.com/zishang520/socket.io/v2/socket"
 )
 
 type pageData struct {
@@ -38,9 +40,6 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Hand
 	sessionStore := auth.NewSessionStore()
 
 	loginPath := cfg.ResolvePath("/login")
-
-	//files := &filesHub{root: cleanRoot(cfg.FMHome), maxUploadSize: cfg.MaxUploadSize}
-	//audio := newAudioHub(cfg.Audio.Device, cfg.Audio.Server, cfg.MicSocket)
 
 	// ------------------------------------------------------------
 	// KasmVNC ReverseProxy
@@ -101,10 +100,19 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Hand
 	mux.Handle("/websockify", authProxy)
 	mux.Handle("/websockify/", authProxy)
 
-	// ------------------------------------------------------------
-	// Audio WebSocket (Opus)
-	// ------------------------------------------------------------
-	mux.HandleFunc("/audio/ws", audio.HandleWS)
+	// 文件浏览器 Socket.IO
+	filesOpts := socketio.DefaultServerOptions()
+	filesOpts.SetPath("/files/socket.io/")
+	filesIO := socketio.NewServer(nil, filesOpts) // 第一个参数传 nil
+	registerFileHandlers(filesIO)
+	mux.Handle("/files/socket.io/", filesIO.ServeHandler(nil))
+
+	// 音频 Socket.IO
+	audioOpts := socketio.DefaultServerOptions()
+	audioOpts.SetPath("/audio/socket.io/")
+	audioIO := socketio.NewServer(nil, audioOpts) // 第一个参数传 nil
+	audio.Register(audioIO)
+	mux.Handle("/audio/socket.io/", audioIO.ServeHandler(nil))
 
 	// ------------------------------------------------------------
 	// Health
