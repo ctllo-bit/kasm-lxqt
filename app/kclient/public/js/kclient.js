@@ -24,11 +24,42 @@ eventer(messageEvent,function(e) {
   }
 },false);
 
+
+//// Fullscreen + KasmVNC Resolution ////
+
+function sendVncMessage(message) {
+  var frame = document.querySelector('iframe.vnc');
+
+  if (!frame || !frame.contentWindow) {
+    console.warn('KasmVNC iframe not found');
+    return false;
+  }
+
+  console.log('KasmVNC message:', message);
+
+  frame.contentWindow.postMessage(message, '*');
+
+  return true;
+}
+
 // Fullscreen handler
 function fullscreen() {
   if (document.fullscreenElement) {
     document.exitFullscreen();
+
+    // 退出全屏后，恢复 KasmVNC 原本的远程自适应缩放模式
+    sendVncMessage({action: 'resize',value: 'remote'});
   } else {
+    // 进入全屏前，设置 KasmVNC 1920x1080
+    // 原始模式是 remote，进入全屏后必须先切到 scale，
+    // 否则 KasmVNC 会清除 forcedResolutionX/Y。
+    sendVncMessage({action: 'resize',value: 'scale'});
+
+    // 使用 KasmVNC 自己的 set_resolution
+    let realWidth =screen.width * window.devicePixelRatio;
+    let realHeight =screen.height * window.devicePixelRatio;
+    sendVncMessage({action: 'set_resolution',value_x: realWidth,value_y: realHeight});
+
     document.documentElement.requestFullscreen();
   }
 }
