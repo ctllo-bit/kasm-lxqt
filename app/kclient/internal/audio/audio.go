@@ -28,10 +28,10 @@ func registerAudioHandlers(io *socketio.Server) {
 
 		sess := &audioSession{s: s}
 
-		sess.on("open", func(...any) { sess.startCapture() })
-		sess.on("close", func(...any) { sess.stopCapture() })
-		sess.on("disconnect", func(...any) { sess.stopCapture() })
-		sess.on("micdata", func(datas ...any) { sess.writeMic(datas...) })
+		s.On("open", func(...any) { sess.startCapture() })
+		s.On("close", func(...any) { sess.stopCapture() })
+		s.On("disconnect", func(...any) { sess.stopCapture() })
+		s.On("micdata", func(datas ...any) { sess.writeMic(datas...) })
 	})
 }
 
@@ -42,11 +42,6 @@ func registerAudioHandlers(io *socketio.Server) {
 type audioSession struct {
 	s       *socketio.Socket
 	capture *Capture
-}
-
-// on 注册事件（薄封装，让上面 4 行写法更对称）。
-func (a *audioSession) on(event string, h func(...any)) {
-	a.s.On(event, h)
 }
 
 // startCapture 启动 PulseAudio 采集，并把 PCM 帧推给 socket。
