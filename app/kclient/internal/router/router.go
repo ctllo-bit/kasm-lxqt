@@ -9,6 +9,7 @@ import (
 	"kclient/config"
 	"kclient/internal/audio"
 	"kclient/internal/auth"
+	"kclient/internal/file"
 	"log"
 	"net"
 	"net/http"
@@ -118,9 +119,9 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Hand
 	mux.Handle("/websockify/", authProxy)
 
 	// 文件浏览器 Socket.IO
-	mux.Handle("/files/socket.io/", NewFilesHandler("/home/remote-desktop"))
+	mux.Handle("/files/socket.io/", file.NewFilesHandler("/home/remote-desktop"))
 	// 文件上传
-	mux.Handle("POST /files/upload", withSessionAuth(sessionStore, loginPath, filesUploadHandler("/home/remote-desktop")))
+	mux.Handle("POST /files/upload", withSessionAuth(sessionStore, loginPath, file.FilesUploadHandler("/home/remote-desktop")))
 
 	//音频
 	mux.Handle("/audio/socket.io/", audioIO.ServeHandler(nil))

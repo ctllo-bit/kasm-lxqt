@@ -1,4 +1,4 @@
-package router
+package file
 
 import (
 	"io"
@@ -86,7 +86,7 @@ func onDownloadfile(s *socketio.Socket, datas ...any) {
 
 // filesUploadHandler 处理 POST /files/upload。
 // 表单字段：filepath（绝对路径）、file（文件流）。
-func filesUploadHandler(fmHome string) http.HandlerFunc {
+func FilesUploadHandler(fmHome string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// 限制总大小 500MB
 		r.Body = http.MaxBytesReader(w, r.Body, 500<<20)
