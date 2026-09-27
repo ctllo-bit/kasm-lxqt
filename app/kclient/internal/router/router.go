@@ -115,7 +115,7 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Hand
 	filesOpts := socketio.DefaultServerOptions()
 	filesOpts.SetPath("/files/socket.io/")
 	filesIO := socketio.NewServer(nil, filesOpts) // 第一个参数传 nil
-	registerFileHandlers(filesIO)
+	registerFileHandlers(filesIO, "/home/remote-desktop")
 	mux.Handle("/files/socket.io/", filesIO.ServeHandler(nil))
 
 	// 音频 Socket.IO
