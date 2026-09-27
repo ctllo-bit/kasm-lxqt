@@ -41,6 +41,18 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Hand
 
 	loginPath := cfg.ResolvePath("/login")
 
+	// 文件浏览器 Socket.IO
+	filesOpts := socketio.DefaultServerOptions()
+	filesOpts.SetPath("/files/socket.io/")
+	filesIO := socketio.NewServer(nil, filesOpts) // 第一个参数传 nil
+	registerFileHandlers(filesIO, "/home/remote-desktop")
+
+	// 音频 Socket.IO
+	audioOpts := socketio.DefaultServerOptions()
+	audioOpts.SetPath("/audio/socket.io/")
+	audioIO := socketio.NewServer(nil, audioOpts) // 第一个参数传 nil
+	audio.Register(audioIO)
+
 	// ------------------------------------------------------------
 	// KasmVNC ReverseProxy
 	// ------------------------------------------------------------
@@ -111,18 +123,8 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Hand
 	mux.Handle("/websockify", authProxy)
 	mux.Handle("/websockify/", authProxy)
 
-	// 文件浏览器 Socket.IO
-	filesOpts := socketio.DefaultServerOptions()
-	filesOpts.SetPath("/files/socket.io/")
-	filesIO := socketio.NewServer(nil, filesOpts) // 第一个参数传 nil
-	registerFileHandlers(filesIO, "/home/remote-desktop")
+	// 文件浏览器、音频
 	mux.Handle("/files/socket.io/", filesIO.ServeHandler(nil))
-
-	// 音频 Socket.IO
-	audioOpts := socketio.DefaultServerOptions()
-	audioOpts.SetPath("/audio/socket.io/")
-	audioIO := socketio.NewServer(nil, audioOpts) // 第一个参数传 nil
-	audio.Register(audioIO)
 	mux.Handle("/audio/socket.io/", audioIO.ServeHandler(nil))
 
 	// ------------------------------------------------------------
