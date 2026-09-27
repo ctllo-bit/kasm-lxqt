@@ -42,23 +42,22 @@ window.addEventListener('message', (e) => {
 // ============================================================
 // 全屏切换
 // ============================================================
-function isFullscreen() {
-  return !!(document.fullscreenElement
-    || document.webkitFullscreenElement
-    || document.mozFullScreenElement
-    || document.msFullscreenElement);
-}
+const fullscreenElement = () => document.fullscreenElement
+  || document.webkitFullscreenElement
+  || document.mozFullScreenElement
+  || document.msFullscreenElement;
 
+// 进入全屏
 function enterFullscreen() {
-  const el = document.documentElement;
-  const req = el.requestFullscreen
-    || el.webkitRequestFullscreen
-    || el.mozRequestFullScreen
-    || el.msRequestFullscreen;
+  const req = document.documentElement.requestFullscreen
+    || document.documentElement.webkitRequestFullscreen
+    || document.documentElement.mozRequestFullScreen
+    || document.documentElement.msRequestFullscreen;
   if (!req) return Promise.reject(new Error('Fullscreen API unavailable'));
-  return Promise.resolve(req.call(el));
+  return Promise.resolve(req.call(document.documentElement));
 }
 
+// 退出全屏
 function exitFullscreen() {
   const ex = document.exitFullscreen
     || document.webkitExitFullscreen
@@ -68,30 +67,30 @@ function exitFullscreen() {
   return Promise.resolve(ex.call(document));
 }
 
+// 全屏切换
 function toggleFullscreen() {
-  if (isFullscreen()) { 
-    exitFullscreen(); 
-    return; 
+  if (fullscreenElement()) {          // ← 用 fullscreenElement()
+    exitFullscreen();
+    return;
   }
 
   // 原始模式是 remote，进入全屏后必须先切到 scale，否则 KasmVNC 会清除 forcedResolutionX/Y
   sendVncMessage({ action: 'resize', value: 'scale' });
 
-  let realWidth  = Math.round(screen.width  * window.devicePixelRatio);
-  let realHeight = Math.round(screen.height * window.devicePixelRatio);
-  sendVncMessage({action: 'set_resolution',value_x: realWidth,value_y: realHeight});
+  const realWidth  = Math.round(screen.width  * (window.devicePixelRatio || 1));
+  const realHeight = Math.round(screen.height * (window.devicePixelRatio || 1));
+  sendVncMessage({ action: 'set_resolution', value_x: realWidth, value_y: realHeight });
 
   enterFullscreen().catch((err) => {
     console.warn('[kasm] fullscreen failed:', err);
-    // 失败回滚，避免 VNC 卡在 scale
-    sendVncMessage({ action: 'resize', value: 'remote' });
+    sendVncMessage({ action: 'resize', value: 'remote' });   // 失败回滚
   });
 }
 
 // 退出全屏（ESC / 浏览器行为）后恢复 remote 模式
 ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange']
   .forEach((evt) => document.addEventListener(evt, () => {
-    if (!isFullscreen()) sendVncMessage({ action: 'resize', value: 'remote' });
+    if (!fullscreenElement()) sendVncMessage({ action: 'resize', value: 'remote' });
   }));
 
 // ============================================================
