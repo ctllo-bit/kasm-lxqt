@@ -65,6 +65,17 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Hand
 	mux.HandleFunc("/favicon.ico", staticFile(filepath.Join(publicDir, "favicon.ico"), "image/x-icon"))
 
 	// ------------------------------------------------------------
+	// 文件浏览器页面
+	// ------------------------------------------------------------
+	mux.HandleFunc("GET /files", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := sessionStore.GetFromRequest(r); !ok {
+			http.Redirect(w, r, loginPath, http.StatusSeeOther)
+			return
+		}
+		http.ServeFile(w, r, filepath.Join(publicDir, "filebrowser.html"))
+	})
+
+	// ------------------------------------------------------------
 	// 登陆页面
 	// ------------------------------------------------------------
 	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {

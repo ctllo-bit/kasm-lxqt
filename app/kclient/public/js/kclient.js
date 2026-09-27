@@ -1,75 +1,80 @@
-// Parse messages from KasmVNC
-// 兼容旧浏览器：现代浏览器用 addEventListener，IE8 及以下用 attachEvent
-var eventMethod = window.addEventListener ? "addEventListener" : "attachEvent";
-var eventer = window[eventMethod];
-var messageEvent = eventMethod == "attachEvent" ? "onmessage" : "message";
-eventer(messageEvent,function(e) {
-  if (event.data && event.data.action) {
-    var $lsbar=$('#lsbar')
-    switch (event.data.action) {
-      case 'control_open':
-        if ($lsbar.is(":hidden")) {
-          $lsbar.slideToggle(300);
-        }
-        break;
-      case 'control_close':
-        if ($lsbar.is(":visible")) {
-          $lsbar.slideToggle(300);
-        }
-        break;
-      case 'fullscreen':
-        toggleFullscreen();
-        break;
-    }
+// 监听 KasmVNC iframe 发来的控制指令
+window.addEventListener('message', function (e) {
+  var data = e.data;
+  if (!data || !data.action) return;
+
+  switch (data.action) {
+    case 'control_open':
+      showEl('#lsbar');
+      break;
+    case 'control_close':
+      hideEl('#lsbar');
+      break;
+    case 'fullscreen':
+      toggleFullscreen();
+      break;
   }
-},false);
+});
 
+// 工具函数
+function q(sel) { return document.querySelector(sel); }
+function showEl(sel) { var el = q(sel); if (el) el.style.display = 'block'; }
+function hideEl(sel) { var el = q(sel); if (el) el.style.display = 'none'; }
+function toggleEl(sel) {
+  var el = q(sel);
+  if (!el) return;
+  el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+}
 
-//// Fullscreen + KasmVNC Resolution ////
+// 给 KasmVNC iframe 发消息
 function sendVncMessage(message) {
-  // jQuery 选择器获取第一个匹配的 iframe
-  var frame = $('iframe.vnc')[0];
+  const frame = q('iframe.vnc');
   if (!frame || !frame.contentWindow) {
     console.warn('KasmVNC iframe not found');
     return false;
   }
-
   frame.contentWindow.postMessage(message, '*');
   return true;
 }
 
-// Fullscreen handler
+// 全屏切换
 function toggleFullscreen() {
   if (document.fullscreenElement) {
     document.exitFullscreen();
-  } else {
-    // 进入全屏前，设置 KasmVNC 1920x1080
-    // 原始模式是 remote，进入全屏后必须先切到 scale，
-    // 否则 KasmVNC 会清除 forcedResolutionX/Y。
-    sendVncMessage({action: 'resize',value: 'scale'});
-
-    // 使用 KasmVNC 自己的 set_resolution
-    let realWidth  = Math.round(screen.width  * window.devicePixelRatio);
-    let realHeight = Math.round(screen.height * window.devicePixelRatio);
-    sendVncMessage({action: 'set_resolution',value_x: realWidth,value_y: realHeight});
-
-    document.documentElement.requestFullscreen();
+    return;
   }
+  // 原始模式是 remote，进入全屏后必须先切到 scale，否则 KasmVNC 会清除 forcedResolutionX/Y。
+  sendVncMessage({action: 'resize',value: 'scale'});
+
+  // 使用 KasmVNC 自己的 set_resolution
+  let realWidth  = Math.round(screen.width  * window.devicePixelRatio);
+  let realHeight = Math.round(screen.height * window.devicePixelRatio);
+  sendVncMessage({action: 'set_resolution',value_x: realWidth,value_y: realHeight});
+
+  // 进入全屏
+  document.documentElement.requestFullscreen();
 }
 
-// 点击退出 / ESC / 浏览器退出 Fullscreen
-document.addEventListener('fullscreenchange', function () {
-  var isFullscreen = 
-    document.fullscreenElement || 
-    document.mozFullScreenElement || 
-    document.webkitFullscreenElement || 
-    document.msFullscreenElement;
-
-  if (!isFullscreen) {
-    // 退出全屏后，恢复 KasmVNC 原本的远程自适应缩放模式
+// 退出全屏（点击 / ESC / 浏览器行为）后恢复 remote 模式
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) {
     sendVncMessage({action: 'resize',value: 'remote'});
   }
 });
+
+// DOM 就绪后一次性绑定按钮
+document.addEventListener('DOMContentLoaded', function () {
+  q('#fileButton').addEventListener('click', function () { toggleEl('#files'); });
+  q('#files .close').addEventListener('click', function () { hideEl('#files'); });
+  q('#audioButton').addEventListener('click', function () { audio(); });
+  q('#micButton').addEventListener('click', function () { mic(); });
+});
+
+
+
+
+
+
 
 //// PCM player ////
 var buffer = [];
