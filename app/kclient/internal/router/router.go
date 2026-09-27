@@ -127,16 +127,24 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Hand
 	return stripBasePath(cfg.Subfolder, mux), nil
 }
 
-// stripBasePath 把外部请求路径中的 base 前缀剥掉，再交给 next。
+// stripBasePath 把外部请求路径中的 base 前缀剥掉，再交给 next；
+// 同时给所有响应加上 Permissions-Policy 头（KasmVNC 前端依赖 unload）。
 func stripBasePath(base string, next http.Handler) http.Handler {
 	base = strings.TrimSuffix(base, "/") //规范化 base，TrimSuffix 去掉末尾的 /
+
+	// 根路径模式：不剥离，只加头
 	if base == "" {
-		return next //根路径模式下，请求原样交给 mux，不需要剥离。
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Permissions-Policy", "unload=(self)")
+			next.ServeHTTP(w, r)
+		})
 	}
 
 	//把请求路径去掉 base 前缀，再交给 next
 	stripped := http.StripPrefix(base, next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { //返回一个 HandlerFunc
+		w.Header().Set("Permissions-Policy", "unload=(self)")
+
 		// 无尾斜杠重定向
 		if r.URL.Path == base {
 			http.Redirect(w, r, base+"/", http.StatusTemporaryRedirect)
