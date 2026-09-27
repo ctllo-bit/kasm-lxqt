@@ -19,8 +19,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	socketio "github.com/zishang520/socket.io/v2/socket"
 )
 
 type pageData struct {
@@ -41,12 +39,6 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Hand
 	sessionStore := auth.NewSessionStore()
 
 	loginPath := cfg.ResolvePath("/login")
-
-	// 音频 Socket.IO
-	audioOpts := socketio.DefaultServerOptions()
-	audioOpts.SetPath("/audio/socket.io/")
-	audioIO := socketio.NewServer(nil, audioOpts) // 第一个参数传 nil
-	audio.Register(audioIO)
 
 	// ------------------------------------------------------------
 	// KasmVNC ReverseProxy
@@ -95,6 +87,7 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Hand
 		renderTemplate(w, loginTmpl, pageData{Title: cfg.Title, Path: loginPath})
 	})
 	mux.HandleFunc("POST /login", auth.LoginHandler(cfg, authenticator, sessionStore))
+	mux.Handle("POST /files/upload", withSessionAuth(sessionStore, loginPath, file.FilesUploadHandler("/home/remote-desktop")))
 
 	// ------------------------------------------------------------
 	// 首页：需要 session
@@ -118,13 +111,10 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Hand
 	mux.Handle("/websockify", authProxy)
 	mux.Handle("/websockify/", authProxy)
 
+	//音频 Socket.IO
+	mux.Handle("/audio/socket.io/", audio.NewAudioHandler())
 	// 文件浏览器 Socket.IO
 	mux.Handle("/files/socket.io/", file.NewFilesHandler("/home/remote-desktop"))
-	// 文件上传
-	mux.Handle("POST /files/upload", withSessionAuth(sessionStore, loginPath, file.FilesUploadHandler("/home/remote-desktop")))
-
-	//音频
-	mux.Handle("/audio/socket.io/", audioIO.ServeHandler(nil))
 
 	// ------------------------------------------------------------
 	// Health
