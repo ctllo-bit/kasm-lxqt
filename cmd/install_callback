@@ -5,19 +5,10 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
 }
 
-# KasmVNC自己认证 或 外层 kclient / 网关负责
-KASMVNC_AUTH_ENABLED=true
-
 # 安装KasmVNC
 sudo apt install -y /var/apps/kasm-lxqt/target/server/kasmvncserver_bookworm_*.deb
 
 REMOTE_HOME="/home/remote-desktop"
-if [ "${KASMVNC_AUTH_ENABLED}" = "true" ]; then
-    KASMVNC_AUTH_ARGS=""
-else
-    KASMVNC_AUTH_ARGS="-disableBasicAuth -SecurityTypes None"
-fi
-
 log_msg "[INFO] 配置KasmVNC的Systemd服务..."
 sudo tee "/etc/systemd/system/kasmvnc.service" > /dev/null <<EOF
 [Unit]
@@ -39,7 +30,7 @@ RuntimeDirectory=remote-desktop
 RuntimeDirectoryMode=0700
 
 ExecStartPre=/usr/bin/pulseaudio --daemonize=yes --log-level=0 --exit-idle-time=-1
-ExecStart=/usr/bin/kasmvncserver ${KASMVNC_AUTH_ARGS}
+ExecStart=/usr/bin/kasmvncserver
 ExecStop=/usr/bin/kasmvncserver -kill
 
 Restart=always
@@ -167,9 +158,9 @@ EOF
 
 # 创建 kclient 配置文件 gateway 或 port
 cat > "${REMOTE_HOME}/.vnc/kclient.yaml" <<EOF
-mode: gateway
+mode: port
 
-subfolder: "/app/kasm-lxqt"
+subfolder: "/"
 title: "KasmVNC Client"
 
 proxy_target: "https://127.0.0.1:6901"
