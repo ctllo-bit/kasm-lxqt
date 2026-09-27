@@ -70,178 +70,224 @@ document.addEventListener('DOMContentLoaded', function () {
   q('#micButton').addEventListener('click', function () { mic(); });
 });
 
-
-
-
-
-
-
 //// PCM player ////
-var buffer = [];
-var playing = false;
-var lock = false;
-// Check for audio stop to reset buffer
-setInterval(function() {
-  if (playing) {
-    if (!lock) {
-      buffer = [];
-      playing = false;
-    }
-    lock = false;
-  }
-}, 100);
+// 每个实例自己持有状态，不再用全局 buffer/playing/lock
 function PCM() {
-  this.init()
+  this.buffer = [];        // 交错立体声 float 样本（L,R,L,R,...）
+  this.playing = false;
+  this.lock = false;       // 本轮 100ms 内是否收到过数据
+  this.lastActive = 0;
+  this._timer = null;
+  this.init();
 }
-// Player Init
-PCM.prototype.init = function() {
-  // Establish audio context
-  this.audioCtx = new(window.AudioContext || window.webkitAudioContext)({
-    sampleRate: 44100
-  })
-  this.audioCtx.resume()
-  this.gainNode = this.audioCtx.createGain()
-  this.gainNode.gain.value = 1
-  this.gainNode.connect(this.audioCtx.destination)
-  this.startTime = this.audioCtx.currentTime
-}
-// Stereo player
-PCM.prototype.feed = function(data) {
-  lock = true;
-  // Convert bytes to typed array then float32 array
-  let i16Array = new Int16Array(data, 0, data.length);
-  let f32Array = Float32Array.from(i16Array, x => x / 32767);
-  buffer = new Float32Array([...buffer, ...f32Array]);
-  let buffAudio = this.audioCtx.createBuffer(2, buffer.length, 44100);
-  let duration = buffAudio.duration / 2;
-  if ((duration > .05) || (playing)) {
-    playing = true;
-    let buffSource = this.audioCtx.createBufferSource();
-    let arrLength = buffer.length / 2;
-    let left = buffAudio.getChannelData(0);
-    let right = buffAudio.getChannelData(1);
-    let byteCount = 0;
-    let offset = 1;
-    for (let count = 0; count < arrLength; count++) {
-      left[count] = buffer[byteCount];
-      byteCount += 2;
-      right[count] = buffer[offset];
-      offset += 2;
+
+PCM.prototype.init = function () {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  this.audioCtx = new Ctx({ sampleRate: 44100 });
+  this.audioCtx.resume();
+
+  this.gainNode = this.audioCtx.createGain();
+  this.gainNode.gain.value = 1;
+  this.gainNode.connect(this.audioCtx.destination);
+
+  this.startTime = this.audioCtx.currentTime;
+
+  // 检测音频流停止：连续 100ms 没有新数据就清空
+  const self = this;
+  this._timer = setInterval(function () {
+    if (self.playing) {
+      if (!self.lock) {
+        self.buffer = [];
+        self.playing = false;
+      }
+      self.lock = false;
     }
-    buffer = [];
-    if (this.startTime < this.audioCtx.currentTime) {
-      this.startTime = this.audioCtx.currentTime;
-    }
-    buffSource.buffer = buffAudio;
-    buffSource.connect(this.gainNode);
-    buffSource.start(this.startTime);
-    this.startTime += duration;
+  }, 100);
+};
+
+PCM.prototype.feed = function (data) {
+  // data: ArrayBuffer，16-bit LE 交错立体声
+  const i16 = new Int16Array(data);
+  for (let i = 0; i < i16.length; i++) {
+    this.buffer.push(i16[i] / 32767);
   }
-}
-// Destroy player
-PCM.prototype.destroy = function() {
-  buffer = [];
-  playing = false;
-  this.audioCtx.close();
-  this.audioCtx = null;
+  this.lock = true;
+
+  const total = this.buffer.length;
+  const frames = total >> 1;                // 每帧 2 个样本（L+R）
+  if (frames === 0) return;
+
+  const duration = frames / 44100;
+  if (duration < 0.05 && !this.playing) return;
+  this.playing = true;
+
+  const buf = this.audioCtx.createBuffer(2, frames, 44100);
+  const left = buf.getChannelData(0);
+  const right = buf.getChannelData(1);
+  for (let i = 0, j = 0; i < frames; i++, j += 2) {
+    left[i] = this.buffer[j];
+    right[i] = this.buffer[j + 1];
+  }
+  this.buffer = [];
+
+  if (this.startTime < this.audioCtx.currentTime) {
+    this.startTime = this.audioCtx.currentTime;
+  }
+
+  const src = this.audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(this.gainNode);
+  src.start(this.startTime);
+  this.startTime += duration;
+};
+
+PCM.prototype.destroy = function () {
+  if (this._timer) { clearInterval(this._timer); this._timer = null; }
+  this.buffer = [];
+  this.playing = false;
+  if (this.audioCtx) {
+    this.audioCtx.close();
+    this.audioCtx = null;
+  }
 };
 
 
-// Websocket comms for audio
-var host = window.location.hostname;
-var port = window.location.port;
-var protocol = window.location.protocol;
-var path = window.location.pathname;
-var socket = io(protocol + '//' + host + ':' + port, { path: path + 'audio/socket.io'});
-var player = {};
-var micEnabled = false;
-var micWorkletNode; // To store the AudioWorkletNode
-var audio_context;
+// ------------------------------------------------------------
+// 音频 Socket.IO 连接
+// ------------------------------------------------------------
+const audioSocket = io(
+  `${window.location.protocol}//${window.location.hostname}:${window.location.port}`,
+  { path: `${window.location.pathname}audio/socket.io` }
+);
 
+let player = null;
+let micEnabled = false;
+let micWorkletNode = null;   // AudioWorkletNode
+let micSource = null;        // MediaStreamSource
+let micCtx = null;           // 麦克风专用的 AudioContext
+let micWorkletURL = null;    // Blob URL，用于 revoke
+
+// 播放开关：正在播 → 停；未播 → 开
 function audio() {
-  if (('audioCtx' in player) && (player.audioCtx)) {
+  const btn = document.querySelector('#audioButton');
+
+  if (player && player.audioCtx) {
     player.destroy();
-    socket.emit('close', '');
-    $('#audioButton').removeClass("icons-selected");
+    player = null;
+    audioSocket.emit('close', '');
+    if (btn) btn.classList.remove('icons-selected');
     return;
   }
-  socket.emit('open', '');
+
+  audioSocket.emit('open', '');
   player = new PCM();
-  $('#audioButton').addClass("icons-selected");
+  if (btn) btn.classList.add('icons-selected');
 }
 
+// 服务端推来的音频帧
 function processAudio(data) {
-  player.feed(data);
+  if (player && player.audioCtx) player.feed(data);
 }
 
-socket.on('audio', processAudio);
+audioSocket.on('audio', processAudio);
 
-// Define the AudioWorkletProcessor as a string.
+// ------------------------------------------------------------
+// AudioWorklet：把麦克风 float 采样转成 int16，回传主线程
+// （跑在音频线程，不是主线程）
+// ------------------------------------------------------------
 const micWorkletProcessorCode = `
 class MicWorkletProcessor extends AudioWorkletProcessor {
-  constructor() {
-    super();
-  }
-
-  process(inputs, outputs, parameters) {
+  process(inputs) {
     const input = inputs[0];
+    if (!input || !input[0]) return true;
 
-    if (input && input[0]) { // Check if input and channel data are available
-      const inputChannelData = input[0];
-      const int16Array = Int16Array.from(inputChannelData, x => x * 32767);
-      if (! int16Array.every(item => item === 0)) {
-        this.port.postMessage({ buffer: int16Array.buffer });
-      }
+    const ch = input[0];
+    const out = new Int16Array(ch.length);
+    let allZero = true;
+
+    for (let i = 0; i < ch.length; i++) {
+      let v = ch[i];
+      if (v > 1) v = 1;
+      else if (v < -1) v = -1;                 // clamp，防溢出回绕
+      const s = v < 0 ? v * 0x8000 : v * 0x7fff; // 负数用 -32768，正数用 32767
+      out[i] = s;
+      if (s !== 0) allZero = false;
     }
-    return true; // Keep the processor alive
+
+    if (!allZero) {
+      // transfer buffer，零拷贝
+      this.port.postMessage({ buffer: out.buffer }, [out.buffer]);
+    }
+    return true;
   }
 }
-
 registerProcessor('mic-worklet-processor', MicWorkletProcessor);
 `;
 
+// ------------------------------------------------------------
+// 释放麦克风相关资源（关闭时 / 出错回滚时共用）
+// ------------------------------------------------------------
+async function cleanupMic() {
+  if (micSource) {
+    try { micSource.disconnect(); } catch (_) {}
+    micSource = null;
+  }
+  if (micWorkletNode) {
+    try { micWorkletNode.disconnect(); } catch (_) {}
+    micWorkletNode.port.onmessage = null;
+    micWorkletNode = null;
+  }
+  if (micStream) {
+    micStream.getTracks().forEach((t) => t.stop());  // 关掉麦克风指示灯
+    micStream = null;
+  }
+  if (micCtx) {
+    try { await micCtx.close(); } catch (_) {}
+    micCtx = null;
+  }
+  if (micWorkletURL) {
+    URL.revokeObjectURL(micWorkletURL);
+    micWorkletURL = null;
+  }
+}
+
+// ------------------------------------------------------------
+// 麦克风开关
+// ------------------------------------------------------------
 async function mic() {
+  const btn = document.querySelector('#micButton');
+
+  // —— 关闭 ——
   if (micEnabled) {
-    $('#micButton').removeClass("icons-selected");
-    if (micWorkletNode) {
-      micWorkletNode.disconnect();
-      micWorkletNode = null; // Release the node
-    }
-    if (audio_context) {
-      audio_context.close();
-      audio_context = null;
-    }
     micEnabled = false;
+    if (btn) btn.classList.remove('icons-selected');
+    await cleanupMic();
     return;
   }
-  $('#micButton').addClass("icons-selected");
+
+  // —— 打开 ——
   micEnabled = true;
-  var mediaConstraints = {
-    audio: true
-  };
+  if (btn) btn.classList.add('icons-selected');
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-    audio_context = new window.AudioContext();
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-    // Create a URL for the AudioWorkletProcessor code
-    const micWorkletProcessorBlob = new Blob([micWorkletProcessorCode], { type: 'text/javascript' });
-    const micWorkletProcessorURL = URL.createObjectURL(micWorkletProcessorBlob);
+    const blob = new Blob([micWorkletProcessorCode], { type: 'text/javascript' });
+    micWorkletURL = URL.createObjectURL(blob);
+    await micCtx.audioWorklet.addModule(micWorkletURL);
 
-    await audio_context.audioWorklet.addModule(micWorkletProcessorURL);
-
-    micWorkletNode = new AudioWorkletNode(audio_context, 'mic-worklet-processor');
-
-    micWorkletNode.port.onmessage = (event) => {
-      socket.emit('micdata', event.data.buffer);
+    micWorkletNode = new AudioWorkletNode(micCtx, 'mic-worklet-processor');
+    micWorkletNode.port.onmessage = (e) => {
+      audioSocket.emit('micdata', e.data.buffer);
     };
 
-    let source = audio_context.createMediaStreamSource(stream);
-    source.connect(micWorkletNode);
-
-  } catch (e) {
-    console.error('media error', e);
-    $('#micButton').removeClass("icons-selected");
+    micSource = micCtx.createMediaStreamSource(micStream);
+    micSource.connect(micWorkletNode);
+  } catch (err) {
+    console.error('[mic] error', err);
     micEnabled = false;
+    if (btn) btn.classList.remove('icons-selected');
+    await cleanupMic();          // 回滚已创建的部分资源
   }
 }
