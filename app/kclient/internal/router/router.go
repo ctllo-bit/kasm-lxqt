@@ -41,12 +41,6 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Hand
 
 	loginPath := cfg.ResolvePath("/login")
 
-	// 文件浏览器 Socket.IO
-	filesOpts := socketio.DefaultServerOptions()
-	filesOpts.SetPath("/files/socket.io/")
-	filesIO := socketio.NewServer(nil, filesOpts) // 第一个参数传 nil
-	registerFileHandlers(filesIO, "/home/remote-desktop")
-
 	// 音频 Socket.IO
 	audioOpts := socketio.DefaultServerOptions()
 	audioOpts.SetPath("/audio/socket.io/")
@@ -123,8 +117,12 @@ func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Hand
 	mux.Handle("/websockify", authProxy)
 	mux.Handle("/websockify/", authProxy)
 
-	// 文件浏览器、音频
-	mux.Handle("/files/socket.io/", filesIO.ServeHandler(nil))
+	// 文件浏览器 Socket.IO
+	mux.Handle("/files/socket.io/", NewFilesHandler("/home/remote-desktop"))
+	// 文件上传
+	mux.Handle("POST /files/upload", withSessionAuth(sessionStore, loginPath, filesUploadHandler("/home/remote-desktop")))
+
+	//音频
 	mux.Handle("/audio/socket.io/", audioIO.ServeHandler(nil))
 
 	// ------------------------------------------------------------

@@ -6,6 +6,7 @@ const port = window.location.port;
 const protocol = window.location.protocol;
 const base = window.location.pathname.replace(/\/files.*$/, '/');
 
+const MAX_UPLOAD = 500 * 1024 * 1024; // 500 MB，与后端一致
 const socket = io(`${protocol}//${host}:${port}`, {
   path: `${base}files/socket.io/`
 });
@@ -23,6 +24,18 @@ function setLoading() {
   const div = document.createElement('div');
   div.id = 'loading';
   filebrowserEl.append(div);
+}
+
+async function uploadOne(file, filePath) {
+  const fd = new FormData();
+  fd.append('filepath', filePath);
+  fd.append('file', file);
+  const res = await fetch(`${base}files/upload`, {
+    method: 'POST',
+    body: fd,
+    credentials: 'same-origin'
+  });
+  if (!res.ok) throw new Error(await res.text());
 }
 
 // ------------------------------------------------------------
@@ -171,31 +184,27 @@ function sendFile(res) {
 async function upload(input) {
   const directory = filebrowserEl.dataset.directory || '/';
   const directoryUp = directory === '/' ? '' : directory;
-
   if (!input.files || !input.files[0]) return;
 
   setLoading();
+  for (const file of Array.from(input.files)) {
+    if (file.size > MAX_UPLOAD) {
+      alert(`File too big: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
+      continue;
+    }
 
-  const files = Array.from(input.files);
-  for (const file of files) {
-    const data = await file.arrayBuffer();
-
-    if (data.byteLength < 200000000) {
-      const info = document.createElement('div');
-      info.textContent = 'Uploading ' + file.name;
-      filebrowserEl.append(info);
-
-      const isLast = file === files[files.length - 1];
-      socket.emit('uploadfile', [directory, `${directoryUp}/${file.name}`, data, isLast]);
-    } else {
-      const info = document.createElement('div');
-      info.textContent = 'File too big ' + file.name;
-      filebrowserEl.append(info);
-
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      socket.emit('getfiles', directory);
+    filebrowserEl.append(
+      Object.assign(document.createElement('div'), { textContent: 'Uploading ' + file.name })
+    );
+    try {
+      await uploadOne(file, `${directoryUp}/${file.name}`);
+    } catch (e) {
+      filebrowserEl.append(
+        Object.assign(document.createElement('div'), { textContent: 'Fail: ' + file.name })
+      );
     }
   }
+  socket.emit('getfiles', directory);
 }
 
 // ------------------------------------------------------------
@@ -235,29 +244,27 @@ async function dropFiles(ev) {
   const directoryUp = directory === '/' ? '' : directory;
 
   const items = await getAllFileEntries(ev.dataTransfer.items);
-  const files = await Promise.all(items.map((it) => it.file()));
+  for (const item of items) {
+    const file = await item.file();
 
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    const fullPath = items[i].fullPath;
-    const data = await file.arrayBuffer();
+    if (file.size > MAX_UPLOAD) {
+      alert(`File too big: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
+      continue;
+    }
 
-    if (data.byteLength < 200000000) {
-      const info = document.createElement('div');
-      info.textContent = 'Uploading ' + file.name;
-      filebrowserEl.append(info);
-
-      const isLast = i === files.length - 1;
-      socket.emit('uploadfile', [directory, directoryUp + fullPath, data, isLast]);
-    } else {
-      const info = document.createElement('div');
-      info.textContent = 'File too big ' + file.name;
-      filebrowserEl.append(info);
-
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      socket.emit('getfiles', directory);
+    const filePath = directoryUp + item.fullPath;
+    filebrowserEl.append(
+      Object.assign(document.createElement('div'), { textContent: 'Uploading ' + file.name })
+    );
+    try {
+      await uploadOne(file, filePath);
+    } catch (e) {
+      filebrowserEl.append(
+        Object.assign(document.createElement('div'), { textContent: 'Fail: ' + file.name })
+      );
     }
   }
+  socket.emit('getfiles', directory);
 }
 
 // BFS 遍历拖进来的文件夹
