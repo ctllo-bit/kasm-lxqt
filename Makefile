@@ -5,7 +5,7 @@ amd:
 arm:
 	$(MAKE) build ARCH=arm64
 
-GO_ENV = CGO_ENABLED=1 GOOS=linux GOARCH=$(ARCH)
+GO_ENV = CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH)
 
 build:
 	@echo "==> golang编译 linux-$(ARCH)..."
