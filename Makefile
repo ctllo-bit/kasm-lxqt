@@ -13,13 +13,13 @@ build:
 
 	@echo "==> 正在打包 fpk..."
 	@fnpack build
-	@mv kasm-lxqt.fpk Kasm-$(ARCH).fpk
+	@mv webtop.fpk Webtop-$(ARCH).fpk
 
-	@rm -f /vol1/1000/Kasm-*.fpk
-	@cp Kasm-$(ARCH).fpk /vol1/1000/
+	@rm -f /vol1/1000/Webtop-*.fpk
+	@cp Webtop-$(ARCH).fpk /vol1/1000/
 	@make clean
 
 clean:
 	@echo "==> 清理编译文件..."
 	@rm -f app/kclient/server
-	@rm -f Kasm-*.fpk
+	@rm -f Webtop-*.fpk

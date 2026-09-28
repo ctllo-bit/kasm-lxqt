@@ -1,12 +1,13 @@
 {
     ".url": {
-        "kasm-lxqt.Application": {
+        "webtop.Application": {
             "title": "Webtop",
             "icon": "images/icon_{0}.png",
             "type": "url",
-            "protocol": "https",
-            "port": "${wizard_port}",
-            "url": "/",
+            "protocol": "",
+            "gatewaySocket": "kclient.sock",
+            "gatewayPrefix": "/app/webtop",
+            "url": "/app/webtop",
             "allUsers": false,
             "control": {
                 "accessPerm": "readonly"

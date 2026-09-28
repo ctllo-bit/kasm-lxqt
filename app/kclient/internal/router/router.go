@@ -26,11 +26,9 @@ type pageData struct {
 	Path  string
 }
 
-const kclientDir = "/var/apps/kasm-lxqt/target/kclient"
-
 func NewHandler(cfg config.Config, authenticator *auth.Authenticator) (http.Handler, error) {
 	// 根目录资源
-	publicDir := filepath.Join(kclientDir, "public")
+	publicDir := filepath.Join(cfg.StaticDir, "public")
 	// 加载 index.html 模板
 	indexTmpl := template.Must(template.ParseFiles(filepath.Join(publicDir, "index.html")))
 	// 加载 login.html 模板
@@ -143,8 +141,6 @@ func stripBasePath(base string, next http.Handler) http.Handler {
 	//把请求路径去掉 base 前缀，再交给 next
 	stripped := http.StripPrefix(base, next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { //返回一个 HandlerFunc
-		w.Header().Set("Permissions-Policy", "unload=(self)")
-
 		// 无尾斜杠重定向
 		if r.URL.Path == base {
 			http.Redirect(w, r, base+"/", http.StatusTemporaryRedirect)
@@ -155,6 +151,7 @@ func stripBasePath(base string, next http.Handler) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		w.Header().Set("Permissions-Policy", "unload=(self)")
 		stripped.ServeHTTP(w, r) // 剥离后交给内层
 	})
 }

@@ -4,13 +4,13 @@
         "items": [
             {
                 "type": "tips",
-                "helpText": "若使用自定义端口，请修改下面端口。"
+                "helpText": "若自定义反代端口，请修改下面端口。"
             },
             {
                 "type": "text",
                 "field": "wizard_port",
-                "label": "应用端口",
-                "initValue": "8088",
+                "label": "默认端口",
+                "initValue": "6901",
                 "rules": [
                     {
                         "required": true,

@@ -6,7 +6,7 @@ log_msg() {
 }
 
 # 安装KasmVNC
-sudo apt install -y /var/apps/kasm-lxqt/target/server/kasmvncserver_bookworm_*.deb
+sudo apt install -y /var/apps/webtop/target/server/kasmvncserver_bookworm_*.deb
 
 REMOTE_HOME="/home/remote-desktop"
 log_msg "[INFO] 配置KasmVNC的Systemd服务..."
@@ -130,13 +130,13 @@ desktop:
 network:
   protocol: http
   interface: 127.0.0.1
-  websocket_port: 6901
+  websocket_port: ${wizard_port}
   use_ipv4: true
-  use_ipv6: false
+  use_ipv6: true
 
   ssl:
-    pem_certificate: /etc/ssl/certs/ssl-cert-snakeoil.pem
-    pem_key: /etc/ssl/private/ssl-cert-snakeoil.key
+    pem_certificate: ${REMOTE_HOME}/.vnc/self.pem
+    pem_key: ${REMOTE_HOME}/.vnc/self.key
     require_ssl: true
 
 server:
@@ -158,16 +158,17 @@ EOF
 
 # 创建 kclient 配置文件 gateway 或 port
 cat > "${REMOTE_HOME}/.vnc/kclient.yaml" <<EOF
-mode: port
+mode: gateway
 
-subfolder: "/"
+subfolder: "/app/webtop"
 title: "KasmVNC Client"
+static_path: "/var/apps/webtop/target/kclient"
 
-proxy_target: "https://127.0.0.1:6901"
+proxy_target: "https://127.0.0.1:${wizard_port}"
 
 listen:
   socket: "${TRIM_APPDEST}/kclient.sock"
-  port: ${wizard_port}
+  port: 8088
 
 ssl:
   pem_certificate: "${REMOTE_HOME}/.vnc/self.pem"
@@ -178,7 +179,6 @@ audio:
   server: "/run/remote-desktop/pulse/native"
 
 mic_socket: "/defaults/mic.sock"
-
 max_upload_size: 200000000
 EOF
 

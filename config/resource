@@ -4,12 +4,12 @@
         "shares":
         [
             {
-                "name": "kasm-lxqt",
+                "name": "webtop",
                 "permission":
                 {
                     "rw":
                     [
-                        "kasm-lxqt"
+                        "webtop"
                     ]
                 }
             }

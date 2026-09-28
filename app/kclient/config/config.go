@@ -10,8 +10,10 @@ import (
 type Config struct {
 	Mode string `yaml:"mode"`
 
-	Subfolder      string `yaml:"subfolder"`
-	Title          string `yaml:"title"`
+	Subfolder string `yaml:"subfolder"`
+	Title     string `yaml:"title"`
+	StaticDir string `yaml:"static_path"`
+
 	VNCProxyTarget string `yaml:"proxy_target"`
 
 	Listen struct {
@@ -32,9 +34,8 @@ type Config struct {
 		Server string `yaml:"server"`
 	} `yaml:"audio"`
 
-	MicSocket string `yaml:"mic_socket"`
-
-	MaxUploadSize int64 `yaml:"max_upload_size"`
+	MicSocket     string `yaml:"mic_socket"`
+	MaxUploadSize int64  `yaml:"max_upload_size"`
 }
 
 func Load(home string) Config {
